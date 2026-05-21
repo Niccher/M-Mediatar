@@ -4,119 +4,88 @@
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.media.MediaView?>
-<?import javafx.scene.text.Font?>
+<?import com.nicch.mediatar.TimelinePane?>
 
-<BorderPane fx:id="rootPane" prefHeight="720.0" prefWidth="1024.0" 
-            xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" 
+<BorderPane fx:id="rootPane" prefHeight="720.0" prefWidth="1024.0"
+            xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
             fx:controller="com.nicch.mediatar.MainWorkhorse">
 
     <top>
-        <VBox fx:id="topContainer">
-            <children>
-                <MenuBar fx:id="mainMenuBar" style="-fx-padding: 4 10 4 10;">
-                    <menus>
-                        <Menu fx:id="menuFile" mnemonicParsing="false" text="File">
-                            <items>
-                                <MenuItem fx:id="itemOpenFile" text="Open Media File..." onAction="#handleImportAction"/>
-                                <MenuItem fx:id="itemSaveProgress" text="Save Progress" onAction="#handleSaveAction"/>
-                                <MenuItem fx:id="itemSaveAs" text="Save As..." onAction="#handleSaveAsAction"/>
-                                <SeparatorMenuItem/>
-                                <MenuItem fx:id="itemExit" text="Exit" onAction="#handleExit"/>
-                            </items>
-                        </Menu>
-                        <Menu fx:id="menuView" mnemonicParsing="false" text="View">
-                            <items>
-                                <MenuItem fx:id="itemThemeSolarized" text="Solarized Light" onAction="#applySolarizedTheme"/>
-                                <MenuItem fx:id="itemThemeDark" text="Classic Dark" onAction="#applyDarkTheme"/>
-                                <MenuItem fx:id="itemThemeCyber" text="Cyberpunk" onAction="#applyCyberpunkTheme"/>
-                                <MenuItem fx:id="itemThemeDracula" text="Dracula" onAction="#applyDraculaTheme"/>
-                            </items>
-                        </Menu>
-                    </menus>
-                </MenuBar>
+        <VBox>
+            <MenuBar>
+                <Menu text="File">
+                    <MenuItem text="Open Media File..." onAction="#handleImportAction"/>
+                    <MenuItem text="Save Project" onAction="#handleSaveAction"/>
+                    <MenuItem text="Export Video" onAction="#handleExportAction"/>
+                    <SeparatorMenuItem/>
+                    <MenuItem text="Exit" onAction="#handleExit"/>
+                </Menu>
+                <Menu text="Edit">
+                    <MenuItem text="Delete Selected Clip" onAction="#deleteSelectedClip"/>
+                </Menu>
+                <Menu text="View Themes">
+                    <MenuItem text="Solarized (Default)" onAction="#applySolarizedTheme"/>
+                    <MenuItem text="Dark Theme" onAction="#applyDarkTheme"/>
+                    <MenuItem text="Light Theme" onAction="#applyLightTheme"/>
+                </Menu>
+            </MenuBar>
 
-                <ToolBar fx:id="actionToolBar">
-                    <items>
-                        <Button fx:id="toolbarBtnOpenFile" text="🗁 Open File" onAction="#handleImportAction"/>
-                        <Button fx:id="toolbarBtnSaveProgress" text="💾 Save" onAction="#handleSaveAction"/>
-                        <Button fx:id="toolbarBtnSaveAs" text="🖫 Save As" onAction="#handleSaveAsAction"/>
-                        <Button fx:id="toolbarBtnRefresh" text="🗘 Refresh" onAction="#handleRefreshAction"/>
-                    </items>
-                </ToolBar>
-            </children>
+            <ToolBar>
+                <Button fx:id="btnImport" text="📁 Import" onAction="#handleImportAction"/>
+                <Separator/>
+                <Label text="Tools:" style="-fx-padding: 0 5 0 5;"/>
+                <ToggleButton fx:id="btnSelectTool" text="↖ Select (V)" selected="true"/>
+                <ToggleButton fx:id="btnBladeTool" text="✂ Blade (C)"/>
+                <Separator/>
+                <Button fx:id="btnPlay" text="▶ Play/Pause" onAction="#togglePlayPause"/>
+                <Separator/>
+                <Button fx:id="btnExport" text="💾 Export" onAction="#handleExportAction"/>
+            </ToolBar>
         </VBox>
     </top>
 
     <center>
-        <StackPane fx:id="mainStackPane">
-            
-            <!-- Welcome Screen -->
-            <VBox fx:id="welcomeContainer" alignment="CENTER" spacing="40.0" style="-fx-background-color: #fdf6e3;">
-                <padding><Insets top="80.0" bottom="80.0"/></padding>
-                <children>
-                    <HBox alignment="CENTER" spacing="60.0">
-                        <children>
-                            <Button fx:id="cardOpenFile" contentDisplay="TOP" graphicTextGap="20.0" 
-                                    onAction="#handleImportAction" prefHeight="240.0" prefWidth="280.0" 
-                                    text="Open Media File" textAlignment="CENTER" wrapText="true"/>
-                            <Button fx:id="cardOpenProject" contentDisplay="TOP" graphicTextGap="20.0" 
-                                    onAction="#handleOpenProjectAction" prefHeight="240.0" prefWidth="280.0" 
-                                    text="Open Project" textAlignment="CENTER" wrapText="true"/>
-                        </children>
-                    </HBox>
-                </children>
+        <SplitPane dividerPositions="0.25, 0.75" style="-fx-background-color: transparent; -fx-padding: 5;">
+            <BorderPane.margin>
+                <Insets top="5" right="5" bottom="5" left="5"/>
+            </BorderPane.margin>
+
+            <VBox spacing="8" style="-fx-padding: 12; -fx-background-radius: 4; -fx-border-radius: 4; -fx-border-color: #888; -fx-border-width: 1;">
+                <Label text="Media Pool" style="-fx-font-weight: bold; -fx-font-size: 14px;"/>
+                <TextField fx:id="searchField" promptText="Search media..."/>
+                <ListView fx:id="mediaListView" VBox.vgrow="ALWAYS" style="-fx-background-color: transparent;"/>
             </VBox>
 
-            <!-- Main Editor -->
-            <SplitPane fx:id="mainSplitPane" dividerPositions="0.32" orientation="HORIZONTAL" visible="false">
-                <!-- Left Panel -->
-                <VBox fx:id="leftPanel" spacing="12.0" style="-fx-padding: 12;">
-                    <children>
-                        <Label text="Media Library" style="-fx-font-weight: bold; -fx-font-size: 16px;"/>
-                        <TextField fx:id="searchField" promptText="Search media files..."/>
-                        <ListView fx:id="mediaListView" prefHeight="2000.0"/>
-                    </children>
+            <StackPane style="-fx-background-color: black; -fx-background-radius: 4; -fx-border-radius: 4; -fx-border-color: #888; -fx-border-width: 1;">
+                <MediaView fx:id="mediaView" fitWidth="640" fitHeight="360" preserveRatio="true"/>
+                <Label fx:id="noVideoLabel" text="Select a clip and press Play" style="-fx-text-fill: #888; -fx-font-size: 16px;"/>
+            </StackPane>
+
+            <VBox spacing="12" style="-fx-padding: 15; -fx-min-width: 220; -fx-background-radius: 4; -fx-border-radius: 4; -fx-border-color: #888; -fx-border-width: 1;">
+                <Label text="Inspector" style="-fx-font-weight: bold; -fx-font-size: 14px;"/>
+                <VBox spacing="5">
+                    <Label text="Audio Level:"/>
+                    <HBox spacing="10" alignment="CENTER_LEFT">
+                        <Slider fx:id="volumeSlider" min="0" max="1" value="0.8" HBox.hgrow="ALWAYS"/>
+                        <Label fx:id="volumeValueLabel" text="80%"/>
+                    </HBox>
+                    <Button fx:id="btnMute" text="Mute Track" onAction="#toggleMute"/>
                 </VBox>
-
-                <!-- Right Panel -->
-                <VBox fx:id="rightPanel" spacing="12.0" style="-fx-padding: 12;">
-                    <children>
-                        <Label text="Preview" style="-fx-font-weight: bold; -fx-font-size: 16px;"/>
-                        
-                        <StackPane fx:id="previewPane" prefHeight="380.0" style="-fx-background-color: black;">
-                            <MediaView fx:id="mediaView" fitWidth="800" fitHeight="380" preserveRatio="true"/>
-                            <Label fx:id="noVideoLabel" text="Select a file and double-click or press Play" 
-                                   style="-fx-text-fill: #888888; -fx-font-size: 16px;"/>
-                        </StackPane>
-
-                        <!-- Volume Control Row -->
-                        <HBox alignment="CENTER_LEFT" spacing="10.0">
-                            <Label text="🔊 Volume:"/>
-                            <Slider fx:id="volumeSlider" prefWidth="180.0" min="0.0" max="1.0" value="0.8" 
-                                    showTickMarks="true" showTickLabels="true"/>
-                            <Label fx:id="volumeValueLabel" text="80%"/>
-                            
-                            <Button fx:id="btnMute" text="🔇 Mute" prefWidth="80" 
-                                    onAction="#toggleMute"/>
-                        </HBox>
-
-                        <Label text="Timeline" style="-fx-font-weight: bold; -fx-font-size: 16px;"/>
-                        <HBox fx:id="timelineContainer" prefHeight="140.0" 
-                              style="-fx-background-color: #eee8d5; -fx-border-color: #93a1a1;">
-                            <children>
-                                <Label text="Timeline Area (Coming Soon)" style="-fx-padding: 30; -fx-font-style: italic;"/>
-                            </children>
-                        </HBox>
-
-                        <HBox spacing="15.0" alignment="CENTER">
-                            <Button fx:id="btnPlay" text="▶ Play" prefWidth="110" onAction="#playSelectedMedia"/>
-                            <Button fx:id="btnPause" text="⏸ Pause" prefWidth="110" onAction="#pauseSelectedMedia"/>
-                            <Button fx:id="btnExport" text="Export Video" prefWidth="140" 
-                                    style="-fx-background-color: #859900; -fx-text-fill: white;"/>
-                        </HBox>
-                    </children>
+                <Separator/>
+                <VBox spacing="5" fx:id="clipInfoBox">
+                    <Label text="Clip Properties" style="-fx-font-weight: bold;"/>
+                    <Label fx:id="lblClipName" text="Name: --" wrapText="true"/>
+                    <Label fx:id="lblClipDuration" text="Duration: --"/>
                 </VBox>
-            </SplitPane>
-        </StackPane>
+            </VBox>
+        </SplitPane>
     </center>
+
+    <bottom>
+        <TimelinePane fx:id="timelinePane" prefHeight="260" style="-fx-border-color: #888; -fx-border-width: 1; -fx-border-radius: 4; -fx-background-radius: 4;">
+            <BorderPane.margin>
+                <Insets top="0" right="5" bottom="5" left="5"/>
+            </BorderPane.margin>
+        </TimelinePane>
+    </bottom>
 </BorderPane>
