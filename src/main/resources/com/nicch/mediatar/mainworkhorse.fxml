@@ -4,6 +4,7 @@
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.media.MediaView?>
+<?import javafx.scene.Group?>
 <?import com.nicch.mediatar.TimelinePane?>
 
 <BorderPane fx:id="rootPane" prefHeight="720.0" prefWidth="1024.0"
@@ -56,10 +57,20 @@
                 <ListView fx:id="mediaListView" VBox.vgrow="ALWAYS" style="-fx-background-color: transparent;"/>
             </VBox>
 
-            <StackPane style="-fx-background-color: black; -fx-background-radius: 4; -fx-border-radius: 4; -fx-border-color: #888; -fx-border-width: 1;">
-                <MediaView fx:id="mediaView" fitWidth="640" fitHeight="360" preserveRatio="true"/>
-                <Label fx:id="noVideoLabel" text="Select a clip and press Play" style="-fx-text-fill: #888; -fx-font-size: 16px;"/>
-            </StackPane>
+            <BorderPane style="-fx-background-color: black; -fx-background-radius: 4; -fx-border-radius: 4; -fx-border-color: #888; -fx-border-width: 1;">
+                <center>
+                    <StackPane>
+                        <MediaView fx:id="mediaView" fitWidth="640" fitHeight="360" preserveRatio="true"/>
+                        <Label fx:id="noVideoLabel" text="Select a clip and press Play" style="-fx-text-fill: #888; -fx-font-size: 16px;"/>
+                    </StackPane>
+                </center>
+                <bottom>
+                    <HBox alignment="CENTER_LEFT" spacing="10" style="-fx-padding: 10;">
+                        <Slider fx:id="playbackSlider" HBox.hgrow="ALWAYS"/>
+                        <Label fx:id="playbackTimeLabel" text="00:00 / 00:00" style="-fx-text-fill: white; -fx-font-family: monospace; -fx-font-size: 13px;"/>
+                    </HBox>
+                </bottom>
+            </BorderPane>
 
             <VBox spacing="12" style="-fx-padding: 15; -fx-min-width: 220; -fx-background-radius: 4; -fx-border-radius: 4; -fx-border-color: #888; -fx-border-width: 1;">
                 <Label text="Inspector" style="-fx-font-weight: bold; -fx-font-size: 14px;"/>
@@ -70,12 +81,15 @@
                         <Label fx:id="volumeValueLabel" text="80%"/>
                     </HBox>
                     <Button fx:id="btnMute" text="Mute Track" onAction="#toggleMute"/>
+                    <HBox fx:id="vuMeterBox" spacing="4" alignment="BOTTOM_CENTER" style="-fx-padding: 10 0 10 0; -fx-min-height: 80;"/>
                 </VBox>
                 <Separator/>
                 <VBox spacing="5" fx:id="clipInfoBox">
                     <Label text="Clip Properties" style="-fx-font-weight: bold;"/>
                     <Label fx:id="lblClipName" text="Name: --" wrapText="true"/>
                     <Label fx:id="lblClipDuration" text="Duration: --"/>
+                    <Label fx:id="lblClipExt" text="Type: --"/>
+                    <Label fx:id="lblClipSize" text="Size: --"/>
                 </VBox>
             </VBox>
         </SplitPane>

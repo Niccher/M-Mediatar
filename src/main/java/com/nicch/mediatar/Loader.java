@@ -18,6 +18,7 @@ import javafx.scene.text.FontWeight;
 import javafx.stage.Stage;
 
 import java.io.IOException;
+import javafx.scene.image.Image;
 
 /**
  * Handles the initial presentation layer, system diagnostics, and transitions into FXML assets.
@@ -29,11 +30,14 @@ public class Loader extends Application {
     @Override
     public void start(Stage stage) {
         stage.setTitle("MMediatar - Workspace Initialization");
+        
+        Image icon = new Image(getClass().getResourceAsStream("logo.png"));
+        stage.getIcons().add(icon);
 
         Parent loaderLayout = createLoaderLayout(stage);
 
-        // Fixed at 1024x720 to prevent viewport popping or resizing on scene changes
-        scene = new Scene(loaderLayout, 1024, 720);
+        // Increased size to 1440x900 for a larger default workspace
+        scene = new Scene(loaderLayout, 1440, 900);
         stage.setScene(scene);
         stage.show();
     }

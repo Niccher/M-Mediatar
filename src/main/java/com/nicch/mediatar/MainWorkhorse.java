@@ -25,6 +25,9 @@ public class MainWorkhorse {
     @FXML private Slider volumeSlider;
     @FXML private Label volumeValueLabel;
     @FXML private Button btnMute;
+    @FXML private javafx.scene.layout.HBox vuMeterBox;
+    @FXML private Slider playbackSlider;
+    @FXML private Label playbackTimeLabel;
     @FXML private TimelinePane timelinePane;
     
     @FXML private ToggleButton btnSelectTool;
@@ -33,13 +36,16 @@ public class MainWorkhorse {
     
     @FXML private Label lblClipName;
     @FXML private Label lblClipDuration;
+    @FXML private Label lblClipExt;
+    @FXML private Label lblClipSize;
+
+    private ProgressBar[] vuBars = new ProgressBar[16];
 
     private ObservableList<MediaItem> mediaItems = FXCollections.observableArrayList();
     private MediaPlayer currentMediaPlayer;
     private boolean isMuted = false;
     private double previousVolume = 0.8;
     private List<TimelineTrack> tracks = new ArrayList<>();
-
     public enum TrackType { VIDEO, AUDIO }
 
     public static class MediaItem {
@@ -89,7 +95,9 @@ public class MainWorkhorse {
         ThemeManager.applyTheme(rootPane);
         
         setupMediaListView();
+        initVuMeters();
         setupVolumeControl();
+        setupPlaybackSlider();
         setupToolGroup();
         setupTooltips();
 
@@ -112,6 +120,19 @@ public class MainWorkhorse {
         btnBladeTool.setTooltip(new Tooltip("Blade Tool (C):\nClick anywhere on a clip to split it into two segments."));
         btnPlay.setTooltip(new Tooltip("Play/Pause Context:\nToggle playback of the currently loaded or selected clip."));
         btnExport.setTooltip(new Tooltip("Export Video:\nRender and save the timeline to a finalized video file."));
+    }
+
+    private void setupPlaybackSlider() {
+        playbackSlider.valueProperty().addListener((obs, oldVal, newVal) -> {
+            if (playbackSlider.isValueChanging() && currentMediaPlayer != null && currentMediaPlayer.getTotalDuration() != null) {
+                currentMediaPlayer.seek(currentMediaPlayer.getTotalDuration().multiply(newVal.doubleValue() / 100.0));
+            }
+        });
+        playbackSlider.setOnMouseClicked(e -> {
+            if (currentMediaPlayer != null && currentMediaPlayer.getTotalDuration() != null) {
+                currentMediaPlayer.seek(currentMediaPlayer.getTotalDuration().multiply(playbackSlider.getValue() / 100.0));
+            }
+        });
     }
 
     private void setupToolGroup() {
@@ -189,6 +210,32 @@ public class MainWorkhorse {
                 event.consume();
             }
         });
+
+        mediaListView.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal != null) {
+                lblClipName.setText("Name: " + newVal.getFileName());
+                String name = newVal.getFileName();
+                int dotIndex = name.lastIndexOf('.');
+                lblClipExt.setText("Type: " + (dotIndex > 0 ? name.substring(dotIndex + 1).toUpperCase() : "Unknown"));
+                long bytes = newVal.getFile().length();
+                if (bytes > 1024 * 1024) {
+                    lblClipSize.setText(String.format("Size: %.2f MB", bytes / (1024.0 * 1024.0)));
+                } else {
+                    lblClipSize.setText(String.format("Size: %.2f KB", bytes / 1024.0));
+                }
+                lblClipDuration.setText("Duration: Loading...");
+                loadMediaWithoutPlaying(newVal);
+            }
+        });
+
+        mediaListView.setOnMouseClicked(event -> {
+            if (event.getClickCount() == 2) {
+                MediaItem selected = mediaListView.getSelectionModel().getSelectedItem();
+                if (selected != null) {
+                    loadAndPlayMedia(selected);
+                }
+            }
+        });
     }
     
     private void updateInspector(TimelineClip clip) {
@@ -203,10 +250,52 @@ public class MainWorkhorse {
         }
     }
 
+    private String formatTime(javafx.util.Duration duration) {
+        if (duration == null || duration.isUnknown()) return "00:00";
+        int totalSeconds = (int) Math.floor(duration.toSeconds());
+        int hours = totalSeconds / 3600;
+        int minutes = (totalSeconds % 3600) / 60;
+        int seconds = totalSeconds % 60;
+        if (hours > 0) {
+            return String.format("%02d:%02d:%02d", hours, minutes, seconds);
+        } else {
+            return String.format("%02d:%02d", minutes, seconds);
+        }
+    }
+
     private void setupVolumeControl() {
         volumeSlider.valueProperty().addListener((obs, oldVal, newVal) -> {
             if (currentMediaPlayer != null && !isMuted) currentMediaPlayer.setVolume(newVal.doubleValue());
             volumeValueLabel.setText((int) (newVal.doubleValue() * 100) + "%");
+        });
+    }
+
+    private void initVuMeters() {
+        vuMeterBox.getChildren().clear();
+        for (int i = 0; i < 16; i++) {
+            ProgressBar bar = new ProgressBar(0.0);
+            bar.setPrefWidth(60);
+            bar.setPrefHeight(10);
+            bar.setRotate(-90);
+            bar.setStyle("-fx-accent: #859900;");
+            javafx.scene.Group group = new javafx.scene.Group(bar);
+            vuMeterBox.getChildren().add(group);
+            vuBars[i] = bar;
+        }
+    }
+
+    private void setupAudioMeters(MediaPlayer player) {
+        player.setAudioSpectrumNumBands(16);
+        player.setAudioSpectrumInterval(0.05); // 50ms updates
+        player.setAudioSpectrumListener((double timestamp, double duration, float[] magnitudes, float[] phases) -> {
+            if (magnitudes != null) {
+                for (int i = 0; i < magnitudes.length && i < 16; i++) {
+                    double prog = Math.max(0, (magnitudes[i] + 60) / 60.0);
+                    vuBars[i].setProgress(prog);
+                    String style = prog > 0.85 ? "-fx-accent: #dc322f;" : (prog > 0.65 ? "-fx-accent: #b58900;" : "-fx-accent: #859900;");
+                    vuBars[i].setStyle(style);
+                }
+            }
         });
     }
 
@@ -276,8 +365,26 @@ public class MainWorkhorse {
             }
             Media media = new Media(item.getFile().toURI().toString());
             currentMediaPlayer = new MediaPlayer(media);
+            
+            currentMediaPlayer.setOnReady(() -> {
+                if (currentMediaPlayer.getTotalDuration() != null) {
+                    lblClipDuration.setText(String.format("Duration: %s", formatTime(currentMediaPlayer.getTotalDuration())));
+                }
+            });
+
             mediaView.setMediaPlayer(currentMediaPlayer);
             noVideoLabel.setVisible(false);
+            
+            setupAudioMeters(currentMediaPlayer);
+            
+            currentMediaPlayer.currentTimeProperty().addListener((obs, oldTime, newTime) -> {
+                if (currentMediaPlayer.getTotalDuration() != null) {
+                    if (!playbackSlider.isValueChanging()) {
+                        playbackSlider.setValue(newTime.toSeconds() / currentMediaPlayer.getTotalDuration().toSeconds() * 100.0);
+                    }
+                    playbackTimeLabel.setText(formatTime(newTime) + " / " + formatTime(currentMediaPlayer.getTotalDuration()));
+                }
+            });
             
             currentMediaPlayer.setVolume(isMuted ? 0 : volumeSlider.getValue());
             currentMediaPlayer.play();
@@ -295,8 +402,27 @@ public class MainWorkhorse {
             }
             Media media = new Media(item.getFile().toURI().toString());
             currentMediaPlayer = new MediaPlayer(media);
+            
+            currentMediaPlayer.setOnReady(() -> {
+                if (currentMediaPlayer.getTotalDuration() != null) {
+                    lblClipDuration.setText(String.format("Duration: %s", formatTime(currentMediaPlayer.getTotalDuration())));
+                }
+            });
+
             mediaView.setMediaPlayer(currentMediaPlayer);
             noVideoLabel.setVisible(false);
+            
+            setupAudioMeters(currentMediaPlayer);
+            
+            currentMediaPlayer.currentTimeProperty().addListener((obs, oldTime, newTime) -> {
+                if (currentMediaPlayer.getTotalDuration() != null) {
+                    if (!playbackSlider.isValueChanging()) {
+                        playbackSlider.setValue(newTime.toSeconds() / currentMediaPlayer.getTotalDuration().toSeconds() * 100.0);
+                    }
+                    playbackTimeLabel.setText(formatTime(newTime) + " / " + formatTime(currentMediaPlayer.getTotalDuration()));
+                }
+            });
+            
             btnPlay.setText("▶ Play");
         } catch (Exception e) {
             System.err.println("Silent load failed: " + e.getMessage());
