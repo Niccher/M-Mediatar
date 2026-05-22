@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.text.Font?>
+
+<BorderPane fx:id="rootPane" prefWidth="980" prefHeight="700"
+            xmlns="http://javafx.com/javafx/11" xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="com.nicch.mediatar.ExportDialogController">
+    <padding><Insets top="20" right="20" bottom="20" left="20"/></padding>
+
+    <top>
+        <VBox spacing="4">
+            <BorderPane.margin><Insets bottom="18"/></BorderPane.margin>
+            <Label text="Advanced Export Settings"
+                   style="-fx-font-size: 22px; -fx-font-weight: bold;"/>
+            <Label text="Configure rendering parameters below. Monitor live ffmpeg output on the right."
+                   style="-fx-font-size: 12px;"/>
+        </VBox>
+    </top>
+
+    <center>
+        <SplitPane dividerPositions="0.42" BorderPane.alignment="CENTER">
+
+            <!-- LEFT: Settings Panel -->
+            <ScrollPane fitToWidth="true" style="-fx-border-color: transparent;">
+                <VBox spacing="14" style="-fx-padding: 12;">
+
+                    <!-- Video Settings -->
+                    <Label text="🎬  Video Settings"
+                           style="-fx-font-weight: bold; -fx-font-size: 13px;"/>
+                    <GridPane hgap="10" vgap="9">
+                        <columnConstraints>
+                            <ColumnConstraints minWidth="120" prefWidth="130"/>
+                            <ColumnConstraints hgrow="ALWAYS"/>
+                        </columnConstraints>
+
+                        <Label text="Resolution:" GridPane.rowIndex="0" GridPane.columnIndex="0">
+                            <tooltip><Tooltip text="Output frame size. Higher = larger file and longer render time.&#10;Use 1920x1080 for HD, 3840x2160 for 4K."/></tooltip>
+                        </Label>
+                        <ComboBox fx:id="cbResolution" GridPane.rowIndex="0" GridPane.columnIndex="1" maxWidth="Infinity">
+                            <tooltip><Tooltip text="Output frame size. Higher = larger file and longer render time."/></tooltip>
+                        </ComboBox>
+
+                        <Label text="Framerate (fps):" GridPane.rowIndex="1" GridPane.columnIndex="0">
+                            <tooltip><Tooltip text="Frames per second. 24fps = cinematic, 30fps = standard, 60fps = smooth."/></tooltip>
+                        </Label>
+                        <ComboBox fx:id="cbFramerate" GridPane.rowIndex="1" GridPane.columnIndex="1" maxWidth="Infinity">
+                            <tooltip><Tooltip text="Output frames per second. 30 is the standard for web video."/></tooltip>
+                        </ComboBox>
+
+                        <Label text="Video Bitrate:" GridPane.rowIndex="2" GridPane.columnIndex="0">
+                            <tooltip><Tooltip text="Video bitrate in kbps. Higher = better quality, larger file.&#10;2000k (720p), 5000k (1080p), 15000k (4K)."/></tooltip>
+                        </Label>
+                        <ComboBox fx:id="cbBitrate" editable="true" GridPane.rowIndex="2" GridPane.columnIndex="1" maxWidth="Infinity">
+                            <tooltip><Tooltip text="Target video bitrate. e.g. 5000k or 5M."/></tooltip>
+                        </ComboBox>
+
+                        <Label text="Video Codec:" GridPane.rowIndex="3" GridPane.columnIndex="0">
+                            <tooltip><Tooltip text="libx264 = best compatibility. libx265 = smaller file. VP9 = best for WebM."/></tooltip>
+                        </Label>
+                        <ComboBox fx:id="cbVideoCodec" GridPane.rowIndex="3" GridPane.columnIndex="1" maxWidth="Infinity">
+                            <tooltip><Tooltip text="Video encoder. libx264 is recommended for broad compatibility."/></tooltip>
+                        </ComboBox>
+                    </GridPane>
+
+                    <Separator/>
+
+                    <!-- Audio Settings -->
+                    <Label text="🔊  Audio Settings" style="-fx-font-weight: bold; -fx-font-size: 13px;"/>
+                    <GridPane hgap="10" vgap="9">
+                        <columnConstraints>
+                            <ColumnConstraints minWidth="120" prefWidth="130"/>
+                            <ColumnConstraints hgrow="ALWAYS"/>
+                        </columnConstraints>
+
+                        <Label text="Audio Codec:" GridPane.rowIndex="0" GridPane.columnIndex="0">
+                            <tooltip><Tooltip text="AAC = standard for MP4. MP3 = wide compatibility. FLAC = lossless."/></tooltip>
+                        </Label>
+                        <ComboBox fx:id="cbAudioCodec" GridPane.rowIndex="0" GridPane.columnIndex="1" maxWidth="Infinity">
+                            <tooltip><Tooltip text="Audio encoder to use in the final render."/></tooltip>
+                        </ComboBox>
+
+                        <Label text="Audio Bitrate:" GridPane.rowIndex="1" GridPane.columnIndex="0">
+                            <tooltip><Tooltip text="Audio quality. 128k = standard, 192k = good, 320k = near-lossless."/></tooltip>
+                        </Label>
+                        <ComboBox fx:id="cbAudioBitrate" editable="true" GridPane.rowIndex="1" GridPane.columnIndex="1" maxWidth="Infinity">
+                            <tooltip><Tooltip text="Audio bitrate. 192k is a good default. 320k for music."/></tooltip>
+                        </ComboBox>
+                    </GridPane>
+
+                    <Separator/>
+
+                    <!-- Output Config -->
+                    <Label text="📁  Output Configuration" style="-fx-font-weight: bold; -fx-font-size: 13px;"/>
+                    <GridPane hgap="10" vgap="9">
+                        <columnConstraints>
+                            <ColumnConstraints minWidth="120" prefWidth="130"/>
+                            <ColumnConstraints hgrow="ALWAYS"/>
+                        </columnConstraints>
+
+                        <Label text="Container Format:" GridPane.rowIndex="0" GridPane.columnIndex="0">
+                            <tooltip><Tooltip text="Output file format. MP4 = universal. MKV = quality. WebM = web. MP3/AAC/M4A = audio only."/></tooltip>
+                        </Label>
+                        <ComboBox fx:id="cbFormat" GridPane.rowIndex="0" GridPane.columnIndex="1" maxWidth="Infinity">
+                            <tooltip><Tooltip text="Output container. Audio formats (MP3, AAC, M4A) skip video encoding."/></tooltip>
+                        </ComboBox>
+
+                        <Label text="Filename:" GridPane.rowIndex="1" GridPane.columnIndex="0">
+                            <tooltip><Tooltip text="Name of the output file (without extension)."/></tooltip>
+                        </Label>
+                        <TextField fx:id="txtFilename" promptText="Final_Render"
+                                   GridPane.rowIndex="1" GridPane.columnIndex="1">
+                            <tooltip><Tooltip text="The filename for your rendered output (extension added automatically)."/></tooltip>
+                        </TextField>
+                    </GridPane>
+
+                    <HBox spacing="8" alignment="CENTER_LEFT">
+                        <TextField fx:id="txtDestDir" promptText="Choose destination directory…"
+                                   editable="false" HBox.hgrow="ALWAYS">
+                            <tooltip><Tooltip text="Directory where the rendered file will be saved."/></tooltip>
+                        </TextField>
+                        <Button text="Browse…" onAction="#browseDirectory">
+                            <tooltip><Tooltip text="Choose a folder to save the output file into."/></tooltip>
+                        </Button>
+                    </HBox>
+
+                    <Region VBox.vgrow="ALWAYS"/>
+
+                    <HBox spacing="10" alignment="CENTER_RIGHT">
+                        <Button fx:id="btnClose" text="Cancel" onAction="#closeDialog"/>
+                        <Button fx:id="btnRender" text="▶  Start Render" onAction="#startRender"
+                                style="-fx-font-weight: bold;">
+                            <tooltip><Tooltip text="Begin rendering all timeline tracks into the final output file."/></tooltip>
+                        </Button>
+                    </HBox>
+                </VBox>
+            </ScrollPane>
+
+            <!-- RIGHT: Terminal -->
+            <VBox spacing="6" style="-fx-padding: 12;">
+                <HBox alignment="CENTER_LEFT" spacing="10">
+                    <Label text="Live Rendering Console (ffmpeg)"
+                           style="-fx-font-weight: bold; -fx-font-size: 13px;" HBox.hgrow="ALWAYS"/>
+                    <Button fx:id="btnOpenFolder" text="📂 Open Output Folder" onAction="#openOutputFolder"
+                            visible="false">
+                        <tooltip><Tooltip text="Open the folder containing the rendered file in your file manager."/></tooltip>
+                    </Button>
+                </HBox>
+                <TextArea fx:id="terminalOutput" editable="false" wrapText="true" VBox.vgrow="ALWAYS"
+                          style="-fx-font-family: 'Consolas', 'Courier New', monospace; -fx-font-size: 11.5px;">
+                    <tooltip><Tooltip text="Live output from the ffmpeg rendering process."/></tooltip>
+                </TextArea>
+            </VBox>
+        </SplitPane>
+    </center>
+</BorderPane>

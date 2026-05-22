@@ -107,9 +107,14 @@ public class Loader extends Application {
         lblDepTitle.setFont(Font.font("System", FontWeight.BOLD, 14));
         lblDepTitle.setStyle("-fx-text-fill: #dc322f;"); // Solarized Crimson Red
 
+        boolean hasFFmpeg = isCommandAvailable("ffmpeg");
+        boolean hasFFprobe = isCommandAvailable("ffprobe");
+        boolean hasFileManager = checkFileManager();
+
         String[] deps = {
-            "✔ ffmpeg — System-wide multimedia translation, codec routing, and stream mapping.",
-            "✔ ffprobe — Structural stream analyzer, track configuration reader, and metadata validator."
+            (hasFFmpeg ? "✔" : "❌") + " ffmpeg — System-wide multimedia translation, codec routing, and stream mapping.",
+            (hasFFprobe ? "✔" : "❌") + " ffprobe — Structural stream analyzer, track configuration reader, and metadata validator.",
+            (hasFileManager ? "✔" : "❌") + " file manager — System file explorer integration (nautilus, dolphin, xdg-open, etc)."
         };
 
         dependenciesBox.getChildren().add(lblDepTitle);
@@ -182,5 +187,22 @@ public class Loader extends Application {
             throw new IOException("Critical Error: Core resource path resolved null root tree stream: " + resourcePath);
         }
         return root;
+    }
+
+    private boolean isCommandAvailable(String cmd) {
+        try {
+            Process p = Runtime.getRuntime().exec(new String[]{"which", cmd});
+            return p.waitFor() == 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean checkFileManager() {
+        String[] managers = {"nautilus", "nemo", "dolphin", "krusader", "thunar", "pcmanfm", "xdg-open"};
+        for (String fm : managers) {
+            if (isCommandAvailable(fm)) return true;
+        }
+        return false;
     }
 }

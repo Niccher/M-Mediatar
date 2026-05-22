@@ -48,6 +48,10 @@
                 <version>0.0.8</version>
                 <configuration>
                     <mainClass>com.nicch.mediatar.App</mainClass>
+                    <options>
+                        <option>-DGST_PLUGIN_PATH=/usr/lib/x86_64-linux-gnu/gstreamer-1.0</option>
+                        <option>-Djava.library.path=/usr/lib/x86_64-linux-gnu/gstreamer-1.0</option>
+                    </options>
                 </configuration>
             </plugin>
         </plugins>

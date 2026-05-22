@@ -71,6 +71,7 @@
                 <center>
                     <StackPane>
                         <MediaView fx:id="mediaView" fitWidth="640" fitHeight="360" preserveRatio="true"/>
+                        <javafx.scene.image.ImageView fx:id="audioThumbnailView" fitWidth="300" fitHeight="300" preserveRatio="true" visible="false"/>
                         <Label fx:id="noVideoLabel" text="Select a clip and press Play" style="-fx-text-fill: #888; -fx-font-size: 16px;"/>
                     </StackPane>
                 </center>
@@ -114,6 +115,9 @@
                         <Slider fx:id="opacitySlider" min="0.0" max="1.0" value="1.0" HBox.hgrow="ALWAYS"/>
                         <Label fx:id="opacityValueLabel" text="100%" minWidth="35"/>
                     </HBox>
+                    <Button fx:id="btnResetClipProps" text="Reset Properties" onAction="#resetClipProperties"
+                            style="-fx-background-color: #586e75 -fx-text-fill: #2aa198; -fx-border-color: #2aa198; -fx-border-width: 1; -fx-border-radius: 4; -fx-font-weight: bold;"
+                            maxWidth="Infinity" disable="true"/>
                 </VBox>
             </VBox>
         </SplitPane>

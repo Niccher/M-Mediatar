@@ -4,6 +4,7 @@
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.media.MediaView?>
+<?import javafx.scene.Group?>
 <?import com.nicch.mediatar.TimelinePane?>
 
 <BorderPane fx:id="rootPane" prefHeight="720.0" prefWidth="1024.0"
@@ -31,15 +32,20 @@
             </MenuBar>
 
             <ToolBar>
-                <Button fx:id="btnImport" text="📁 Import" onAction="#handleImportAction"/>
+                <Button fx:id="btnImport" text="+ Import" onAction="#handleImportAction" style="-fx-text-fill: #2aa198; -fx-font-size: 14px; -fx-font-weight: bold;"/>
                 <Separator/>
                 <Label text="Tools:" style="-fx-padding: 0 5 0 5;"/>
-                <ToggleButton fx:id="btnSelectTool" text="↖ Select (V)" selected="true"/>
-                <ToggleButton fx:id="btnBladeTool" text="✂ Blade (C)"/>
+                <ToggleButton fx:id="btnSelectTool" text="Select (V)" selected="true"/>
+                <ToggleButton fx:id="btnBladeTool" text="Blade (C)"/>
                 <Separator/>
-                <Button fx:id="btnPlay" text="▶ Play/Pause" onAction="#togglePlayPause"/>
+                <Button fx:id="btnStepBack" text="|&lt;" onAction="#stepBack" style="-fx-text-fill: #2aa198; -fx-font-size: 14px; -fx-font-weight: bold;"/>
+                <Button fx:id="btnRewind" text="&lt;&lt;" onAction="#rewind" style="-fx-text-fill: #2aa198; -fx-font-size: 14px; -fx-font-weight: bold;"/>
+                <Button fx:id="btnPlay" text="Play" onAction="#togglePlayPause" style="-fx-text-fill: #cb4b16; -fx-font-size: 14px; -fx-font-weight: bold;"/>
+                <Button fx:id="btnFastForward" text="&gt;&gt;" onAction="#fastForward" style="-fx-text-fill: #2aa198; -fx-font-size: 14px; -fx-font-weight: bold;"/>
+                <Button fx:id="btnStepForward" text="&gt;|" onAction="#stepForward" style="-fx-text-fill: #2aa198; -fx-font-size: 14px; -fx-font-weight: bold;"/>
+                <ToggleButton fx:id="btnLoop" text="Loop" style="-fx-text-fill: #2aa198; -fx-font-size: 14px; -fx-font-weight: bold;"/>
                 <Separator/>
-                <Button fx:id="btnExport" text="💾 Export" onAction="#handleExportAction"/>
+                <Button fx:id="btnExport" text="Export" onAction="#handleExportAction" style="-fx-text-fill: #2aa198; -fx-font-size: 14px; -fx-font-weight: bold;"/>
             </ToolBar>
         </VBox>
     </top>
@@ -56,10 +62,26 @@
                 <ListView fx:id="mediaListView" VBox.vgrow="ALWAYS" style="-fx-background-color: transparent;"/>
             </VBox>
 
-            <StackPane style="-fx-background-color: black; -fx-background-radius: 4; -fx-border-radius: 4; -fx-border-color: #888; -fx-border-width: 1;">
-                <MediaView fx:id="mediaView" fitWidth="640" fitHeight="360" preserveRatio="true"/>
-                <Label fx:id="noVideoLabel" text="Select a clip and press Play" style="-fx-text-fill: #888; -fx-font-size: 16px;"/>
-            </StackPane>
+            <BorderPane style="-fx-background-color: black; -fx-background-radius: 4; -fx-border-radius: 4; -fx-border-color: #888; -fx-border-width: 1;">
+                <top>
+                    <HBox alignment="CENTER" style="-fx-padding: 5; -fx-background-color: #111;">
+                        <Label fx:id="lblLargeTimecode" text="00:00:00.00" style="-fx-text-fill: #859900; -fx-font-family: monospace; -fx-font-size: 24px; -fx-font-weight: bold;"/>
+                    </HBox>
+                </top>
+                <center>
+                    <StackPane>
+                        <MediaView fx:id="mediaView" fitWidth="640" fitHeight="360" preserveRatio="true"/>
+                        <javafx.scene.image.ImageView fx:id="audioThumbnailView" fitWidth="300" fitHeight="300" preserveRatio="true" visible="false"/>
+                        <Label fx:id="noVideoLabel" text="Select a clip and press Play" style="-fx-text-fill: #888; -fx-font-size: 16px;"/>
+                    </StackPane>
+                </center>
+                <bottom>
+                    <HBox alignment="CENTER_LEFT" spacing="10" style="-fx-padding: 10;">
+                        <Slider fx:id="playbackSlider" HBox.hgrow="ALWAYS"/>
+                        <Label fx:id="playbackTimeLabel" text="00:00 / 00:00" style="-fx-text-fill: white; -fx-font-family: monospace; -fx-font-size: 13px;"/>
+                    </HBox>
+                </bottom>
+            </BorderPane>
 
             <VBox spacing="12" style="-fx-padding: 15; -fx-min-width: 220; -fx-background-radius: 4; -fx-border-radius: 4; -fx-border-color: #888; -fx-border-width: 1;">
                 <Label text="Inspector" style="-fx-font-weight: bold; -fx-font-size: 14px;"/>
@@ -70,22 +92,51 @@
                         <Label fx:id="volumeValueLabel" text="80%"/>
                     </HBox>
                     <Button fx:id="btnMute" text="Mute Track" onAction="#toggleMute"/>
+                    <HBox fx:id="vuMeterBox" spacing="4" alignment="BOTTOM_CENTER" style="-fx-padding: 10 0 10 0; -fx-min-height: 80;"/>
                 </VBox>
                 <Separator/>
                 <VBox spacing="5" fx:id="clipInfoBox">
                     <Label text="Clip Properties" style="-fx-font-weight: bold;"/>
-                    <Label fx:id="lblClipName" text="Name: --" wrapText="true"/>
+                    <HBox alignment="CENTER_LEFT" spacing="5">
+                        <Label text="Name:"/>
+                        <TextField fx:id="txtClipName" HBox.hgrow="ALWAYS"/>
+                    </HBox>
                     <Label fx:id="lblClipDuration" text="Duration: --"/>
+                    <Label fx:id="lblClipExt" text="Type: --"/>
+                    
+                    <Label text="Playback Speed:" style="-fx-padding: 10 0 0 0;"/>
+                    <HBox spacing="10" alignment="CENTER_LEFT">
+                        <Slider fx:id="speedSlider" min="0.25" max="4.0" value="1.0" HBox.hgrow="ALWAYS"/>
+                        <Label fx:id="speedValueLabel" text="1.0x" minWidth="35"/>
+                    </HBox>
+                    
+                    <Label text="Opacity:"/>
+                    <HBox spacing="10" alignment="CENTER_LEFT">
+                        <Slider fx:id="opacitySlider" min="0.0" max="1.0" value="1.0" HBox.hgrow="ALWAYS"/>
+                        <Label fx:id="opacityValueLabel" text="100%" minWidth="35"/>
+                    </HBox>
+                    <Button fx:id="btnResetClipProps" text="Reset Properties" onAction="#resetClipProperties"
+                            style="-fx-background-color: #586e75 -fx-text-fill: #2aa198; -fx-border-color: #2aa198; -fx-border-width: 1; -fx-border-radius: 4; -fx-font-weight: bold;"
+                            maxWidth="Infinity" disable="true"/>
                 </VBox>
             </VBox>
         </SplitPane>
     </center>
 
     <bottom>
-        <TimelinePane fx:id="timelinePane" prefHeight="260" style="-fx-border-color: #888; -fx-border-width: 1; -fx-border-radius: 4; -fx-background-radius: 4;">
+        <VBox spacing="5" style="-fx-border-color: #888; -fx-border-width: 1; -fx-border-radius: 4; -fx-background-radius: 4;">
             <BorderPane.margin>
                 <Insets top="0" right="5" bottom="5" left="5"/>
             </BorderPane.margin>
-        </TimelinePane>
+            <TimelinePane fx:id="timelinePane" prefHeight="230"/>
+            <HBox alignment="CENTER" spacing="10" style="-fx-padding: 0 10 5 10;">
+                <Button fx:id="btnPlayTimeline" text="Play Timeline" onAction="#playTimeline" style="-fx-text-fill: #cb4b16; -fx-font-size: 14px; -fx-font-weight: bold;"/>
+                <Button fx:id="btnStopTimeline" text="Stop" onAction="#stopTimeline" style="-fx-text-fill: #dc322f; -fx-font-size: 14px; -fx-font-weight: bold;"/>
+                <Separator orientation="VERTICAL"/>
+                <ToggleButton fx:id="btnMagnet" text="Snap" selected="true" style="-fx-text-fill: #d33682; -fx-font-size: 13px; -fx-font-weight: bold;"/>
+                <Label text="Zoom:" style="-fx-text-fill: #b58900; -fx-font-weight: bold;"/>
+                <Slider fx:id="zoomSlider" min="1" max="100" value="50" prefWidth="150"/>
+            </HBox>
+        </VBox>
     </bottom>
 </BorderPane>
