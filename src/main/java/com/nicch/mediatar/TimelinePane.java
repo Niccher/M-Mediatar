@@ -26,9 +26,13 @@ public class TimelinePane extends Region {
     
     private Consumer<MainWorkhorse.TimelineClip> onClipSelected;
     private Runnable onPlayPauseRequested; // Callback for the context menu
+    private Consumer<Double> onPlayheadScrubbed;
     
     private Tooltip hoverMetadataTooltip;
     private ContextMenu rightClickMenu;
+
+    private boolean isSnappingEnabled = true;
+    private double currentZoomLevel = 50.0;
 
     public enum ToolMode { SELECTION, BLADE }
     private ToolMode currentTool = ToolMode.SELECTION;
@@ -36,7 +40,7 @@ public class TimelinePane extends Region {
     private enum DragMode { NONE, MOVE_CLIP, RESIZE_LEFT, RESIZE_RIGHT, SCRUB_PLAYHEAD }
     private DragMode dragMode = DragMode.NONE;
     
-    private double dragStartMouseX, dragStartClipStart, dragStartClipDur;
+    private double dragStartMouseX, dragStartClipStart, dragStartClipDur, dragStartClipOffset;
     private MainWorkhorse.TimelineClip draggedClip;
     
     private final double RULER_HEIGHT = 30.0;
@@ -95,17 +99,21 @@ public class TimelinePane extends Region {
         this.onPlayPauseRequested = callback;
     }
     
+    public void setOnPlayheadScrubbed(Consumer<Double> callback) {
+        this.onPlayheadScrubbed = callback;
+    }
+    
     private void setupTooltipsAndMenus() {
         hoverMetadataTooltip = new Tooltip();
         hoverMetadataTooltip.setFont(Font.font("System", 12));
         
         rightClickMenu = new ContextMenu();
         
-        MenuItem playItem = new MenuItem("▶ Play / Pause Context");
-        MenuItem splitAvItem = new MenuItem("✂ Split Audio and Video");
-        MenuItem trimItem = new MenuItem("➖ Trim (Cut 1s from ends)");
-        MenuItem mergeItem = new MenuItem("🔗 Merge with next on track");
-        MenuItem removeItem = new MenuItem("🗑 Remove Clip");
+        MenuItem playItem = new MenuItem("> Play / Pause");
+        MenuItem splitAvItem = new MenuItem("-- Split Audio and Video");
+        MenuItem trimItem = new MenuItem("[] Trim (Cut 1s from ends)");
+        MenuItem mergeItem = new MenuItem("++ Merge with next on track");
+        MenuItem removeItem = new MenuItem("X  Remove Clip");
         
         playItem.setOnAction(e -> {
            if(onPlayPauseRequested != null) onPlayPauseRequested.run();
@@ -114,7 +122,7 @@ public class TimelinePane extends Region {
         splitAvItem.setOnAction(e -> {
             if(selectedClip != null && selectedClip.getTrackIndex() == 0) { 
                 MainWorkhorse.TimelineClip audioExt = new MainWorkhorse.TimelineClip(
-                    selectedClip.getMediaItem(), selectedClip.getStartSeconds(), selectedClip.getDurationSeconds(), 1
+                    selectedClip.getMediaItem(), selectedClip.getStartSeconds(), selectedClip.getDurationSeconds(), 1, selectedClip.getMediaStartOffset()
                 );
                 tracks.get(1).getClips().add(audioExt);
                 redraw();
@@ -125,6 +133,7 @@ public class TimelinePane extends Region {
             if (selectedClip != null && selectedClip.getDurationSeconds() > 2.0) {
                 selectedClip.setStartSeconds(selectedClip.getStartSeconds() + 1.0);
                 selectedClip.setDurationSeconds(selectedClip.getDurationSeconds() - 2.0);
+                selectedClip.setMediaStartOffset(selectedClip.getMediaStartOffset() + 1.0);
                 redraw();
             }
         });
@@ -158,6 +167,15 @@ public class TimelinePane extends Region {
         canvas.setCursor(mode == ToolMode.BLADE ? Cursor.CROSSHAIR : Cursor.DEFAULT);
     }
     
+    public void setSnappingEnabled(boolean snap) {
+        this.isSnappingEnabled = snap;
+    }
+
+    public void setZoomLevel(double zoom) {
+        this.currentZoomLevel = zoom;
+        redraw();
+    }
+    
     public void setOnClipSelected(Consumer<MainWorkhorse.TimelineClip> listener) {
         this.onClipSelected = listener;
     }
@@ -167,9 +185,14 @@ public class TimelinePane extends Region {
         redraw();
     }
     
+    public void scrubPlayhead(double time) {
+        setPlayheadTime(time);
+        if (onPlayheadScrubbed != null) onPlayheadScrubbed.accept(this.playheadTime);
+    }
+    
     public MainWorkhorse.TimelineClip getSelectedClip() { return selectedClip; }
 
-    private double getMaxTime() {
+    public double getMaxTime() {
         double maxTime = 0;
         if (tracks != null) {
             for (MainWorkhorse.TimelineTrack track : tracks) {
@@ -189,7 +212,12 @@ public class TimelinePane extends Region {
         canvas.setHeight(h);
         
         double maxTimelineDuration = Math.max(10.0, getMaxTime());
-        zoomSecondsPerPixel = (maxTimelineDuration * 1.1) / Math.max(1, w);
+        double baseZoomSecondsPerPixel = (maxTimelineDuration * 1.1) / Math.max(1, w);
+        double maxZoomSecondsPerPixel = 0.02; // very zoomed in
+        double fraction = Math.max(0, Math.min(1.0, (currentZoomLevel - 1.0) / 99.0));
+        
+        // Logarithmic scale for smoother zooming experience
+        zoomSecondsPerPixel = baseZoomSecondsPerPixel * Math.pow((maxZoomSecondsPerPixel / baseZoomSecondsPerPixel), fraction);
 
         GraphicsContext gc = canvas.getGraphicsContext2D();
         gc.clearRect(0, 0, w, h);
@@ -311,7 +339,7 @@ public class TimelinePane extends Region {
         
         if (e.getY() <= RULER_HEIGHT) {
             dragMode = DragMode.SCRUB_PLAYHEAD;
-            setPlayheadTime(time);
+            scrubPlayhead(time);
             return;
         }
 
@@ -337,6 +365,7 @@ public class TimelinePane extends Region {
             dragStartMouseX = e.getX();
             dragStartClipStart = clicked.getStartSeconds();
             dragStartClipDur = clicked.getDurationSeconds();
+            dragStartClipOffset = clicked.getMediaStartOffset();
 
             double localTime = time - clicked.getStartSeconds();
             if (localTime < 0.5) dragMode = DragMode.RESIZE_LEFT;
@@ -349,7 +378,7 @@ public class TimelinePane extends Region {
         double time = e.getX() * zoomSecondsPerPixel;
 
         if (dragMode == DragMode.SCRUB_PLAYHEAD) {
-            setPlayheadTime(time);
+            scrubPlayhead(time);
             return;
         }
 
@@ -376,8 +405,10 @@ public class TimelinePane extends Region {
                 newStartL = applySnapMagnetism(newStartL, draggedClip);
                 double newDur = dragStartClipDur - (newStartL - dragStartClipStart);
                 if (newDur > 0.5 && newStartL >= 0) {
+                    double offsetShift = newStartL - dragStartClipStart;
                     draggedClip.setStartSeconds(newStartL);
                     draggedClip.setDurationSeconds(newDur);
+                    draggedClip.setMediaStartOffset(Math.max(0, dragStartClipOffset + offsetShift));
                 }
                 break;
             case RESIZE_RIGHT:
@@ -399,13 +430,14 @@ public class TimelinePane extends Region {
         double rightDur = clip.getDurationSeconds() - leftDur;
 
         MainWorkhorse.TimelineClip right = new MainWorkhorse.TimelineClip(
-                clip.getMediaItem(), splitTime, rightDur, clip.getTrackIndex());
+                clip.getMediaItem(), splitTime, rightDur, clip.getTrackIndex(), clip.getMediaStartOffset() + leftDur);
         clip.setDurationSeconds(leftDur);
         tracks.get(clip.getTrackIndex()).getClips().add(right);
         redraw();
     }
 
     private double applySnapMagnetism(double time, MainWorkhorse.TimelineClip ignoreClip) {
+        if (!isSnappingEnabled) return time;
         if (Math.abs(time - playheadTime) < SNAP_THRESHOLD) return playheadTime;
         for (MainWorkhorse.TimelineTrack track : tracks) {
             for (MainWorkhorse.TimelineClip c : track.getClips()) {

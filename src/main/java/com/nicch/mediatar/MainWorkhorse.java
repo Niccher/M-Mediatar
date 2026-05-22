@@ -15,6 +15,8 @@ import javafx.stage.FileChooser;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 
 public class MainWorkhorse {
 
@@ -33,11 +35,20 @@ public class MainWorkhorse {
     @FXML private ToggleButton btnSelectTool;
     @FXML private ToggleButton btnBladeTool;
     @FXML private Button btnImport, btnPlay, btnExport;
+    @FXML private Button btnStepBack, btnRewind, btnFastForward, btnStepForward;
+    @FXML private Button btnPlayTimeline, btnStopTimeline;
+    @FXML private ToggleButton btnLoop;
+    @FXML private ToggleButton btnMagnet;
+    @FXML private Slider zoomSlider;
     
-    @FXML private Label lblClipName;
+    @FXML private Label lblLargeTimecode;
+    @FXML private TextField txtClipName;
     @FXML private Label lblClipDuration;
     @FXML private Label lblClipExt;
-    @FXML private Label lblClipSize;
+    @FXML private Slider speedSlider;
+    @FXML private Label speedValueLabel;
+    @FXML private Slider opacitySlider;
+    @FXML private Label opacityValueLabel;
 
     private ProgressBar[] vuBars = new ProgressBar[16];
 
@@ -46,6 +57,14 @@ public class MainWorkhorse {
     private boolean isMuted = false;
     private double previousVolume = 0.8;
     private List<TimelineTrack> tracks = new ArrayList<>();
+    
+    private boolean isPlayingTimeline = false;
+    private double globalPlayheadTime = 0.0;
+    private TimelineClip activeTimelineClip = null;
+    private Map<Integer, TimelineClip> activeAudioClips = new HashMap<>();
+    private Map<Integer, MediaPlayer> audioPlayers = new HashMap<>();
+    private javafx.animation.AnimationTimer timelineTimer;
+    private long lastTimerUpdate = 0;
     public enum TrackType { VIDEO, AUDIO }
 
     public static class MediaItem {
@@ -60,6 +79,10 @@ public class MainWorkhorse {
         private double startSeconds;
         private double durationSeconds;
         private int trackIndex;
+        private double mediaStartOffset = 0.0;
+        private double playbackSpeed = 1.0;
+        private double opacity = 1.0;
+        private String aliasName;
 
         public TimelineClip(MediaItem item, double start, double dur, int track) {
             this.mediaItem = item;
@@ -67,6 +90,15 @@ public class MainWorkhorse {
             this.durationSeconds = dur;
             this.trackIndex = track;
         }
+
+        public TimelineClip(MediaItem item, double start, double dur, int track, double offset) {
+            this.mediaItem = item;
+            this.startSeconds = start;
+            this.durationSeconds = dur;
+            this.trackIndex = track;
+            this.mediaStartOffset = offset;
+        }
+
         public MediaItem getMediaItem() { return mediaItem; }
         public double getStartSeconds() { return startSeconds; }
         public void setStartSeconds(double s) { this.startSeconds = s; }
@@ -74,6 +106,14 @@ public class MainWorkhorse {
         public void setDurationSeconds(double d) { this.durationSeconds = d; }
         public int getTrackIndex() { return trackIndex; }
         public void setTrackIndex(int t) { this.trackIndex = t; }
+        public double getMediaStartOffset() { return mediaStartOffset; }
+        public void setMediaStartOffset(double offset) { this.mediaStartOffset = offset; }
+        public double getPlaybackSpeed() { return playbackSpeed; }
+        public void setPlaybackSpeed(double s) { this.playbackSpeed = s; }
+        public double getOpacity() { return opacity; }
+        public void setOpacity(double o) { this.opacity = o; }
+        public String getAliasName() { return aliasName != null ? aliasName : mediaItem.getFileName(); }
+        public void setAliasName(String a) { this.aliasName = a; }
     }
 
     public static class TimelineTrack {
@@ -100,6 +140,7 @@ public class MainWorkhorse {
         setupPlaybackSlider();
         setupToolGroup();
         setupTooltips();
+        setupZoomAndSnapping();
 
         tracks.add(new TimelineTrack("V1", TrackType.VIDEO));
         tracks.add(new TimelineTrack("A1", TrackType.AUDIO));
@@ -109,17 +150,91 @@ public class MainWorkhorse {
         timelinePane.setPlayheadTime(0.0);
         
         timelinePane.setOnClipSelected(this::updateInspector);
-        
-        // Pass the play/pause logic down to the timeline's right-click menu
         timelinePane.setOnPlayPauseRequested(this::togglePlayPause);
+        
+        timelinePane.setOnPlayheadScrubbed(time -> {
+            globalPlayheadTime = time;
+            evaluateTimelinePlayback(time);
+            if (lblLargeTimecode != null) lblLargeTimecode.setText(formatTimecode(time));
+        });
+
+        timelineTimer = new javafx.animation.AnimationTimer() {
+            @Override
+            public void handle(long now) {
+                if (lastTimerUpdate == 0) {
+                    lastTimerUpdate = now;
+                    return;
+                }
+                double deltaSec = (now - lastTimerUpdate) / 1_000_000_000.0;
+                lastTimerUpdate = now;
+                
+                if (isPlayingTimeline) {
+                    globalPlayheadTime += deltaSec;
+                    if (globalPlayheadTime > timelinePane.getMaxTime()) {
+                        stopTimeline();
+                        return;
+                    }
+                    timelinePane.setPlayheadTime(globalPlayheadTime);
+                    evaluateTimelinePlayback(globalPlayheadTime);
+                    if (lblLargeTimecode != null) lblLargeTimecode.setText(formatTimecode(globalPlayheadTime));
+                }
+            }
+        };
+        timelineTimer.start();
+        
+        txtClipName.textProperty().addListener((obs, oldV, newV) -> {
+            TimelineClip clip = timelinePane.getSelectedClip();
+            if (clip != null) {
+                clip.setAliasName(newV);
+                timelinePane.redraw();
+            }
+        });
+        speedSlider.valueProperty().addListener((obs, oldV, newV) -> {
+            TimelineClip clip = timelinePane.getSelectedClip();
+            if (clip != null) {
+                clip.setPlaybackSpeed(newV.doubleValue());
+                speedValueLabel.setText(String.format("%.2fx", newV.doubleValue()));
+                if (clip == activeTimelineClip && currentMediaPlayer != null) {
+                    currentMediaPlayer.setRate(newV.doubleValue());
+                }
+            }
+        });
+        opacitySlider.valueProperty().addListener((obs, oldV, newV) -> {
+            TimelineClip clip = timelinePane.getSelectedClip();
+            if (clip != null) {
+                clip.setOpacity(newV.doubleValue());
+                opacityValueLabel.setText((int)(newV.doubleValue() * 100) + "%");
+                if (clip == activeTimelineClip) {
+                    mediaView.setOpacity(newV.doubleValue());
+                }
+            }
+        });
+    }
+
+    private String formatTimecode(double totalSeconds) {
+        int hours = (int) (totalSeconds / 3600);
+        int mins = (int) ((totalSeconds % 3600) / 60);
+        int secs = (int) (totalSeconds % 60);
+        int frames = (int) ((totalSeconds - (int)totalSeconds) * 30);
+        return String.format("%02d:%02d:%02d.%02d", hours, mins, secs, frames);
     }
 
     private void setupTooltips() {
-        btnImport.setTooltip(new Tooltip("Import Media:\nLoad video or audio files from your computer into the Media Pool."));
-        btnSelectTool.setTooltip(new Tooltip("Selection Tool (V):\nSelect clips, drag to move them, and hover over edges to trim."));
-        btnBladeTool.setTooltip(new Tooltip("Blade Tool (C):\nClick anywhere on a clip to split it into two segments."));
-        btnPlay.setTooltip(new Tooltip("Play/Pause Context:\nToggle playback of the currently loaded or selected clip."));
-        btnExport.setTooltip(new Tooltip("Export Video:\nRender and save the timeline to a finalized video file."));
+        if (btnImport != null) btnImport.setTooltip(new Tooltip("Import Media:\nLoad video or audio files from your computer into the Media Pool."));
+        if (btnSelectTool != null) btnSelectTool.setTooltip(new Tooltip("Selection Tool (V):\nSelect clips, drag to move them, and hover over edges to trim."));
+        if (btnBladeTool != null) btnBladeTool.setTooltip(new Tooltip("Blade Tool (C):\nClick anywhere on a clip to split it into two segments."));
+        if (btnPlay != null) btnPlay.setTooltip(new Tooltip("Play/Pause Context:\nToggle playback of the currently loaded or selected clip."));
+        if (btnExport != null) btnExport.setTooltip(new Tooltip("Export Video:\nRender and save the timeline to a finalized video file."));
+        
+        if (btnStepBack != null) btnStepBack.setTooltip(new Tooltip("Step Back:\nMove the playhead backward by 1 frame (0.1s)."));
+        if (btnStepForward != null) btnStepForward.setTooltip(new Tooltip("Step Forward:\nMove the playhead forward by 1 frame (0.1s)."));
+        if (btnRewind != null) btnRewind.setTooltip(new Tooltip("Rewind:\nSkip backward by 5 seconds."));
+        if (btnFastForward != null) btnFastForward.setTooltip(new Tooltip("Fast Forward:\nSkip forward by 5 seconds."));
+        if (btnLoop != null) btnLoop.setTooltip(new Tooltip("Loop Playback:\nContinuously repeat the current media."));
+        if (btnMagnet != null) btnMagnet.setTooltip(new Tooltip("Toggle Snapping:\nEnable/disable magnetic snapping of clips to edges and the playhead."));
+        if (zoomSlider != null) zoomSlider.setTooltip(new Tooltip("Timeline Zoom:\nAdjust the scale of the timeline to zoom in or out."));
+        if (btnPlayTimeline != null) btnPlayTimeline.setTooltip(new Tooltip("Play Timeline:\nPlay your edited sequence from the current playhead position in the preview window."));
+        if (btnStopTimeline != null) btnStopTimeline.setTooltip(new Tooltip("Stop Timeline:\nStop timeline playback and reset the playhead to the beginning."));
     }
 
     private void setupPlaybackSlider() {
@@ -167,7 +282,7 @@ public class MainWorkhorse {
                         setText(null);
                         setTooltip(null);
                     } else {
-                        setText("🎞 " + item.getFileName());
+                        setText("> " + item.getFileName());
                         Tooltip metaTooltip = new Tooltip(String.format("File Metadata:\nName: %s\nPath: %s", 
                             item.getFileName(), item.getFile().getAbsolutePath()));
                         setTooltip(metaTooltip);
@@ -178,9 +293,9 @@ public class MainWorkhorse {
         });
 
         ContextMenu poolMenu = new ContextMenu();
-        MenuItem playPreview = new MenuItem("▶ Play Preview");
-        MenuItem addToTimeline = new MenuItem("➕ Add to Timeline (V1)");
-        MenuItem removeFile = new MenuItem("🗑 Remove from Pool");
+        MenuItem playPreview = new MenuItem("> Play Preview");
+        MenuItem addToTimeline = new MenuItem("+ Add to Timeline (V1)");
+        MenuItem removeFile = new MenuItem("X Remove from Pool");
         
         playPreview.setOnAction(e -> {
             MediaItem selected = mediaListView.getSelectionModel().getSelectedItem();
@@ -213,16 +328,13 @@ public class MainWorkhorse {
 
         mediaListView.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             if (newVal != null) {
-                lblClipName.setText("Name: " + newVal.getFileName());
+                txtClipName.setText(newVal.getFileName());
+                txtClipName.setDisable(true);
+                speedSlider.setDisable(true);
+                opacitySlider.setDisable(true);
                 String name = newVal.getFileName();
                 int dotIndex = name.lastIndexOf('.');
                 lblClipExt.setText("Type: " + (dotIndex > 0 ? name.substring(dotIndex + 1).toUpperCase() : "Unknown"));
-                long bytes = newVal.getFile().length();
-                if (bytes > 1024 * 1024) {
-                    lblClipSize.setText(String.format("Size: %.2f MB", bytes / (1024.0 * 1024.0)));
-                } else {
-                    lblClipSize.setText(String.format("Size: %.2f KB", bytes / 1024.0));
-                }
                 lblClipDuration.setText("Duration: Loading...");
                 loadMediaWithoutPlaying(newVal);
             }
@@ -240,11 +352,26 @@ public class MainWorkhorse {
     
     private void updateInspector(TimelineClip clip) {
         if (clip == null) {
-            lblClipName.setText("Name: --");
+            txtClipName.setText("--");
+            txtClipName.setDisable(true);
+            speedSlider.setDisable(true);
+            opacitySlider.setDisable(true);
             lblClipDuration.setText("Duration: --");
+            lblClipExt.setText("Type: --");
         } else {
-            lblClipName.setText("Name: " + clip.getMediaItem().getFileName());
+            txtClipName.setText(clip.getAliasName());
+            txtClipName.setDisable(false);
+            speedSlider.setDisable(false);
+            speedSlider.setValue(clip.getPlaybackSpeed());
+            speedValueLabel.setText(String.format("%.2fx", clip.getPlaybackSpeed()));
+            opacitySlider.setDisable(false);
+            opacitySlider.setValue(clip.getOpacity());
+            opacityValueLabel.setText((int)(clip.getOpacity() * 100) + "%");
+            
             lblClipDuration.setText(String.format("Duration: %.2fs", clip.getDurationSeconds()));
+            String name = clip.getMediaItem().getFileName();
+            int dotIndex = name.lastIndexOf('.');
+            lblClipExt.setText("Type: " + (dotIndex > 0 ? name.substring(dotIndex + 1).toUpperCase() : "Unknown"));
             // Automatically load it into the player, but don't play it yet
             loadMediaWithoutPlaying(clip.getMediaItem());
         }
@@ -322,7 +449,7 @@ public class MainWorkhorse {
     @FXML 
     private void handleImportAction() {
         FileChooser fc = new FileChooser();
-        fc.setTitle("Import Media File");
+        fc.setTitle("Import Media File(s)");
         
         fc.getExtensionFilters().addAll(
             new FileChooser.ExtensionFilter("All Media", "*.mp4", "*.mov", "*.mkv", "*.webm", "*.mp3", "*.wav", "*.aac"),
@@ -330,34 +457,182 @@ public class MainWorkhorse {
             new FileChooser.ExtensionFilter("Audio Files", "*.mp3", "*.wav", "*.aac")
         );
         
-        File file = fc.showOpenDialog(rootPane.getScene().getWindow());
-        if (file != null) mediaItems.add(new MediaItem(file));
+        List<File> files = fc.showOpenMultipleDialog(rootPane.getScene().getWindow());
+        if (files != null) {
+            for (File file : files) {
+                mediaItems.add(new MediaItem(file));
+            }
+        }
     }
 
     @FXML 
     private void togglePlayPause() {
-        // If nothing is loaded in the player, try to load the selected timeline clip
-        if (currentMediaPlayer == null) {
-            TimelineClip clip = timelinePane.getSelectedClip();
-            if (clip != null) {
-                loadAndPlayMedia(clip.getMediaItem());
-            } else {
-                showAlert("Playback", "Select a clip to play.");
-            }
+        if (currentMediaPlayer == null && timelinePane.getSelectedClip() == null) {
+            if (!tracks.isEmpty() && !tracks.get(0).getClips().isEmpty()) toggleTimelinePlayback();
+            else showAlert("Playback", "Select a clip to play or add clips to the timeline.");
             return;
         }
-
-        // True Play/Pause toggle
-        if (currentMediaPlayer.getStatus() == MediaPlayer.Status.PLAYING) {
-            currentMediaPlayer.pause();
-            btnPlay.setText("▶ Play");
+        if (isPlayingTimeline) {
+            toggleTimelinePlayback();
+            return;
+        }
+        if (currentMediaPlayer != null) {
+            if (currentMediaPlayer.getStatus() == MediaPlayer.Status.PLAYING) {
+                currentMediaPlayer.pause();
+                btnPlay.setText("Play");
+            } else {
+                currentMediaPlayer.play();
+                btnPlay.setText("Pause");
+            }
         } else {
-            currentMediaPlayer.play();
-            btnPlay.setText("⏸ Pause");
+            toggleTimelinePlayback();
         }
     }
 
+    private void toggleTimelinePlayback() {
+        isPlayingTimeline = !isPlayingTimeline;
+        if (isPlayingTimeline) {
+            lastTimerUpdate = 0; 
+            btnPlay.setText("Pause");
+            if (btnPlayTimeline != null) btnPlayTimeline.setText("Pause Timeline");
+            if (currentMediaPlayer != null && currentMediaPlayer.getStatus() == MediaPlayer.Status.PLAYING) {
+                currentMediaPlayer.stop();
+            }
+            for (MediaPlayer ap : audioPlayers.values()) {
+                if (ap != null && ap.getStatus() == MediaPlayer.Status.PLAYING) ap.stop();
+            }
+            evaluateTimelinePlayback(globalPlayheadTime);
+        } else {
+            btnPlay.setText("Play");
+            if (btnPlayTimeline != null) btnPlayTimeline.setText("Play Timeline");
+            if (currentMediaPlayer != null) currentMediaPlayer.pause();
+            for (MediaPlayer ap : audioPlayers.values()) {
+                if (ap != null) ap.pause();
+            }
+        }
+    }
+
+    @FXML
+    private void playTimeline() {
+        if (!tracks.isEmpty() && !tracks.get(0).getClips().isEmpty()) {
+            toggleTimelinePlayback();
+        } else {
+            showAlert("Timeline", "Add clips to the timeline first by dragging them from the Media Pool.");
+        }
+    }
+
+    @FXML
+    private void stopTimeline() {
+        isPlayingTimeline = false;
+        globalPlayheadTime = 0.0;
+        activeTimelineClip = null;
+        activeAudioClips.clear();
+        timelinePane.setPlayheadTime(0.0);
+        if (currentMediaPlayer != null) {
+            currentMediaPlayer.stop();
+        }
+        for (MediaPlayer ap : audioPlayers.values()) {
+            if (ap != null) ap.stop();
+        }
+        audioPlayers.clear();
+        btnPlay.setText("Play");
+        if (btnPlayTimeline != null) btnPlayTimeline.setText("Play Timeline");
+        noVideoLabel.setVisible(true);
+    }
+
+    private void evaluateTimelinePlayback(double globalTime) {
+        TimelineClip clipUnderPlayhead = null;
+        if (!tracks.isEmpty()) {
+            for (TimelineClip clip : tracks.get(0).getClips()) {
+                if (globalTime >= clip.getStartSeconds() && globalTime < clip.getStartSeconds() + clip.getDurationSeconds()) {
+                    clipUnderPlayhead = clip;
+                    break;
+                }
+            }
+        }
+        if (clipUnderPlayhead != activeTimelineClip) {
+            activeTimelineClip = clipUnderPlayhead;
+            if (activeTimelineClip != null) {
+                loadAndPlayTimelineClip(activeTimelineClip, globalTime);
+            } else {
+                if (currentMediaPlayer != null) {
+                    currentMediaPlayer.stop();
+                    mediaView.setMediaPlayer(null);
+                    noVideoLabel.setVisible(true);
+                }
+            }
+        } else if (activeTimelineClip != null && currentMediaPlayer != null && isPlayingTimeline) {
+            if (currentMediaPlayer.getStatus() != MediaPlayer.Status.PLAYING) currentMediaPlayer.play();
+        }
+
+        for (int trackIdx = 1; trackIdx < tracks.size(); trackIdx++) {
+            TimelineClip audioClipUnderPlayhead = null;
+            for (TimelineClip clip : tracks.get(trackIdx).getClips()) {
+                if (globalTime >= clip.getStartSeconds() && globalTime < clip.getStartSeconds() + clip.getDurationSeconds()) {
+                    audioClipUnderPlayhead = clip;
+                    break;
+                }
+            }
+
+            TimelineClip currentlyActive = activeAudioClips.get(trackIdx);
+            if (audioClipUnderPlayhead != currentlyActive) {
+                activeAudioClips.put(trackIdx, audioClipUnderPlayhead);
+                MediaPlayer oldPlayer = audioPlayers.get(trackIdx);
+                if (oldPlayer != null) {
+                    oldPlayer.stop();
+                    oldPlayer.dispose();
+                    audioPlayers.remove(trackIdx);
+                }
+                
+                if (audioClipUnderPlayhead != null) {
+                    loadAndPlayTimelineAudioClip(trackIdx, audioClipUnderPlayhead, globalTime);
+                }
+            } else if (currentlyActive != null && isPlayingTimeline) {
+                MediaPlayer p = audioPlayers.get(trackIdx);
+                if (p != null && p.getStatus() != MediaPlayer.Status.PLAYING) {
+                    p.play();
+                }
+            }
+        }
+    }
+    
+    private void loadAndPlayTimelineClip(TimelineClip clip, double globalTime) {
+        if (currentMediaPlayer != null) {
+            currentMediaPlayer.stop();
+            currentMediaPlayer.dispose();
+        }
+        Media media = new Media(clip.getMediaItem().getFile().toURI().toString());
+        currentMediaPlayer = new MediaPlayer(media);
+        mediaView.setMediaPlayer(currentMediaPlayer);
+        noVideoLabel.setVisible(false);
+        setupAudioMeters(currentMediaPlayer);
+        currentMediaPlayer.setVolume(isMuted ? 0 : volumeSlider.getValue());
+        
+        currentMediaPlayer.setOnReady(() -> {
+            double localTime = globalTime - clip.getStartSeconds();
+            currentMediaPlayer.seek(javafx.util.Duration.seconds(clip.getMediaStartOffset() + localTime));
+            currentMediaPlayer.setRate(clip.getPlaybackSpeed());
+            mediaView.setOpacity(clip.getOpacity());
+            if (isPlayingTimeline) currentMediaPlayer.play();
+        });
+    }
+
+    private void loadAndPlayTimelineAudioClip(int trackIdx, TimelineClip clip, double globalTime) {
+        Media media = new Media(clip.getMediaItem().getFile().toURI().toString());
+        MediaPlayer newPlayer = new MediaPlayer(media);
+        newPlayer.setVolume(isMuted ? 0 : volumeSlider.getValue());
+        audioPlayers.put(trackIdx, newPlayer);
+        
+        newPlayer.setOnReady(() -> {
+            double localTime = globalTime - clip.getStartSeconds();
+            newPlayer.seek(javafx.util.Duration.seconds(clip.getMediaStartOffset() + localTime));
+            if (isPlayingTimeline) newPlayer.play();
+        });
+    }
+
     private void loadAndPlayMedia(MediaItem item) {
+        isPlayingTimeline = false;
+        activeTimelineClip = null;
         try {
             if (currentMediaPlayer != null) {
                 currentMediaPlayer.stop();
@@ -370,6 +645,7 @@ public class MainWorkhorse {
                 if (currentMediaPlayer.getTotalDuration() != null) {
                     lblClipDuration.setText(String.format("Duration: %s", formatTime(currentMediaPlayer.getTotalDuration())));
                 }
+                currentMediaPlayer.setCycleCount(btnLoop != null && btnLoop.isSelected() ? MediaPlayer.INDEFINITE : 1);
             });
 
             mediaView.setMediaPlayer(currentMediaPlayer);
@@ -388,13 +664,15 @@ public class MainWorkhorse {
             
             currentMediaPlayer.setVolume(isMuted ? 0 : volumeSlider.getValue());
             currentMediaPlayer.play();
-            btnPlay.setText("⏸ Pause");
+            btnPlay.setText("Pause");
         } catch (Exception e) {
             showAlert("Playback Error", "Could not play this file. " + e.getMessage());
         }
     }
     
     private void loadMediaWithoutPlaying(MediaItem item) {
+        isPlayingTimeline = false;
+        activeTimelineClip = null;
         try {
             if (currentMediaPlayer != null) {
                 currentMediaPlayer.stop();
@@ -407,6 +685,7 @@ public class MainWorkhorse {
                 if (currentMediaPlayer.getTotalDuration() != null) {
                     lblClipDuration.setText(String.format("Duration: %s", formatTime(currentMediaPlayer.getTotalDuration())));
                 }
+                currentMediaPlayer.setCycleCount(btnLoop != null && btnLoop.isSelected() ? MediaPlayer.INDEFINITE : 1);
             });
 
             mediaView.setMediaPlayer(currentMediaPlayer);
@@ -423,7 +702,7 @@ public class MainWorkhorse {
                 }
             });
             
-            btnPlay.setText("▶ Play");
+            btnPlay.setText("Play");
         } catch (Exception e) {
             System.err.println("Silent load failed: " + e.getMessage());
         }
@@ -432,6 +711,51 @@ public class MainWorkhorse {
     @FXML 
     private void deleteSelectedClip() {
         timelinePane.deleteSelectedClip();
+    }
+
+    private void setupZoomAndSnapping() {
+        if (zoomSlider != null) {
+            zoomSlider.valueProperty().addListener((obs, oldVal, newVal) -> {
+                timelinePane.setZoomLevel(newVal.doubleValue());
+            });
+        }
+        if (btnMagnet != null) {
+            btnMagnet.selectedProperty().addListener((obs, oldVal, newVal) -> {
+                timelinePane.setSnappingEnabled(newVal);
+                btnMagnet.setText(newVal ? "Snap" : "Snap");
+            });
+        }
+        if (btnLoop != null) {
+            btnLoop.setOnAction(e -> {
+                if (currentMediaPlayer != null) {
+                    currentMediaPlayer.setCycleCount(btnLoop.isSelected() ? MediaPlayer.INDEFINITE : 1);
+                }
+            });
+        }
+    }
+
+    @FXML private void stepBack() {
+        if (currentMediaPlayer != null) {
+            currentMediaPlayer.seek(currentMediaPlayer.getCurrentTime().subtract(javafx.util.Duration.seconds(0.1)));
+        }
+    }
+
+    @FXML private void stepForward() {
+        if (currentMediaPlayer != null) {
+            currentMediaPlayer.seek(currentMediaPlayer.getCurrentTime().add(javafx.util.Duration.seconds(0.1)));
+        }
+    }
+
+    @FXML private void rewind() {
+        if (currentMediaPlayer != null) {
+            currentMediaPlayer.seek(currentMediaPlayer.getCurrentTime().subtract(javafx.util.Duration.seconds(5.0)));
+        }
+    }
+
+    @FXML private void fastForward() {
+        if (currentMediaPlayer != null) {
+            currentMediaPlayer.seek(currentMediaPlayer.getCurrentTime().add(javafx.util.Duration.seconds(5.0)));
+        }
     }
 
     @FXML private void handleExportAction() { showAlert("Export", "Export functionality is not yet implemented."); }
