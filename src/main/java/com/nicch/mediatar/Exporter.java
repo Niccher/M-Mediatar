@@ -162,11 +162,16 @@ public class Exporter {
         cmd.add("-i"); cmd.add(v1Master.getAbsolutePath());
         
         List<File> v2ProcessedClips = new ArrayList<>();
+        List<Double> v2StartOffsets = new ArrayList<>();
         if (v2 != null && !v2.getClips().isEmpty()) {
             int clipIdx = 0;
             for (MainWorkhorse.TimelineClip clip : v2.getClips()) {
                 File processed = processPiPClip(clip, tempDir, "v2_pip_" + clipIdx, config);
                 v2ProcessedClips.add(processed);
+                v2StartOffsets.add(clip.getStartSeconds());
+                // itsoffset shifts the input PTS by +startSeconds so the clip
+                // lines up with the global timeline inside filter_complex
+                cmd.add("-itsoffset"); cmd.add(String.valueOf(clip.getStartSeconds()));
                 cmd.add("-i"); cmd.add(processed.getAbsolutePath());
                 clipIdx++;
             }
@@ -217,9 +222,17 @@ public class Exporter {
                 
                 String escapedPath = textFile.getAbsolutePath().replace("\\", "/").replace(":", "\\:").replace("'", "\\'");
                 
+                // Find a usable font — fall back through common Linux locations
+                String fontFile = findFontFile();
+                String fontOption = fontFile != null ? ":fontfile='" + fontFile + "'" : "";
+                
                 if (textFilters.length() > 0) textFilters.append(",");
-                textFilters.append(String.format("drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill:enable='between(t,%.3f,%.3f)'", start, end));
-                textFilters.append(String.format(",drawtext=textfile='%s':fontcolor=%s:fontsize=%d:x=(w-text_w)/2:y=(h-text_h)/2:shadowcolor=black@0.8:shadowx=3:shadowy=3:enable='between(t,%.3f,%.3f)'", escapedPath, color, size, start, end));
+                textFilters.append(String.format(
+                    "drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill:enable='between(t,%.3f,%.3f)'",
+                    start, end));
+                textFilters.append(String.format(
+                    ",drawtext=textfile='%s'%s:fontcolor=%s:fontsize=%d:x=(w-text_w)/2:y=(h-text_h)/2:shadowcolor=black@0.8:shadowx=3:shadowy=3:enable='between(t,%.3f,%.3f)'",
+                    escapedPath, fontOption, color, size, start, end));
                 clipIdx++;
             }
         }
@@ -227,8 +240,8 @@ public class Exporter {
         if (v2ProcessedClips.isEmpty() && !hasText) return v1Master;
         
         if (v2ProcessedClips.isEmpty() && hasText) {
+            // Text-only: vf chain handles video routing automatically
             cmd.add("-vf"); cmd.add(textFilters.toString());
-            cmd.add("-map"); cmd.add("0:v");
             cmd.add("-map"); cmd.add("0:a?");
         } else if (!v2ProcessedClips.isEmpty() && !hasText) {
             filter.setLength(filter.length() - 1);
@@ -598,6 +611,28 @@ public class Exporter {
         } catch (Exception ignored) {
             ignored.printStackTrace();
         }
+        return null;
+    }
+
+    /** Finds a usable TTF/OTF font for drawtext. Returns null if none found. */
+    private static String findFontFile() {
+        String[] candidates = {
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans.ttf"
+        };
+        for (String path : candidates) {
+            if (new File(path).exists()) return path;
+        }
+        // Try fc-match as last resort
+        try {
+            Process p = new ProcessBuilder("fc-match", "--format=%{file}", "sans").start();
+            String result = new String(p.getInputStream().readAllBytes()).trim();
+            p.waitFor();
+            if (!result.isEmpty() && new File(result).exists()) return result;
+        } catch (Exception ignored) {}
         return null;
     }
 
