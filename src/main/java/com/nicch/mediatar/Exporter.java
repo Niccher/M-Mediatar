@@ -25,9 +25,10 @@ public class Exporter {
                 boolean audioOnlyOutput = config.isAudioOnlyFormat();
                 File v1Master = null;
 
-                // Phase 1 & 2: Process V1 (video track)
+                // Phase 1: Process V1 (video track)
                 if (!audioOnlyOutput) {
-                    MainWorkhorse.TimelineTrack v1 = tracks.size() > 0 ? tracks.get(0) : null;
+                    MainWorkhorse.TimelineTrack v1 = tracks.stream().filter(t -> t.getType() == MainWorkhorse.TrackType.VIDEO).findFirst().orElse(null);
+                    
                     if (v1 != null && !v1.getClips().isEmpty()) {
                         v1Master = processVideoTrack(v1, tempDir, "v1", config, audioThumbnail);
                     }
@@ -35,9 +36,9 @@ public class Exporter {
 
                 // Gather all audio tracks (both V1 audio and A1/A2)
                 List<File> audioMasters = new ArrayList<>();
-                for (int i = audioOnlyOutput ? 0 : 1; i < tracks.size(); i++) {
+                for (int i = 0; i < tracks.size(); i++) {
                     MainWorkhorse.TimelineTrack track = tracks.get(i);
-                    if (track != null && !track.getClips().isEmpty()) {
+                    if (track != null && track.getType() == MainWorkhorse.TrackType.AUDIO && !track.getClips().isEmpty()) {
                         String prefix = "track_" + i;
                         File aMaster = processAudioTrack(track, tempDir, prefix, config, audioThumbnail);
                         if (aMaster != null && aMaster.exists()) {
@@ -110,15 +111,29 @@ public class Exporter {
                 }
 
                 // Codec settings
+                // If we have text to burn in, we MUST re-encode the video (cannot use copy)
+                MainWorkhorse.TimelineTrack t1 = tracks.stream().filter(t -> t.getType() == MainWorkhorse.TrackType.TEXT).findFirst().orElse(null);
+                boolean hasText = t1 != null && !t1.getClips().isEmpty();
+                
                 if (hasVideoOutput) {
-                    mixCmd.add("-c:v"); mixCmd.add("copy");
+                    mixCmd.add("-c:v"); mixCmd.add(hasText ? config.getVideoCodec() : "copy");
+                    if (hasText) { mixCmd.add("-b:v"); mixCmd.add(config.getVideoBitrate()); mixCmd.add("-preset"); mixCmd.add("fast"); }
                 }
                 mixCmd.add("-c:a"); mixCmd.add(config.getAudioCodec());
                 mixCmd.add("-b:a"); mixCmd.add(config.getAudioBitrate());
-                mixCmd.add(config.getDestinationFile().getAbsolutePath());
+                
+                // If we have text and a video output, route to an intermediate file first
+                File mixOut = (hasText && hasVideoOutput) ? new File(tempDir, "mixed_no_text.mp4") : config.getDestinationFile();
+                mixCmd.add(mixOut.getAbsolutePath());
 
                 config.getCallback().onLog("\n▶ Final Mixdown...");
                 runProcess(mixCmd, config);
+                
+                // Phase 5: Overlay Text Track (works for both video-only and audio-only timelines)
+                if (hasText && hasVideoOutput) {
+                    File textOut = processTextTrackOverlay(t1, mixOut, tempDir, "t1", config);
+                    java.nio.file.Files.copy(textOut.toPath(), config.getDestinationFile().toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                }
 
                 // Cleanup temp files
                 config.getCallback().onLog("🧹 Cleaning up temporary files...");
@@ -134,6 +149,60 @@ public class Exporter {
                 config.getCallback().onComplete(false, null);
             }
         }).start();
+    }
+
+    // ─── Text Track Processing ────────────────────────────────────────────────
+    private static File processTextTrackOverlay(MainWorkhorse.TimelineTrack track, File v1Master, File tempDir, String prefix, ExportConfig config) throws Exception {
+        config.getCallback().onLog("\n── Overlaying Text Track ──");
+        File textOut = new File(tempDir, prefix + "_master.mp4");
+        
+        List<String> cmd = new ArrayList<>();
+        cmd.add("ffmpeg"); cmd.add("-hide_banner"); cmd.add("-y");
+        cmd.add("-i"); cmd.add(v1Master.getAbsolutePath());
+        
+        StringBuilder filter = new StringBuilder();
+        int clipIdx = 0;
+        for (MainWorkhorse.TimelineClip clip : track.getClips()) {
+            if (clip.getTextContent() == null || clip.getTextContent().trim().isEmpty()) continue;
+            
+            File textFile = new File(tempDir, prefix + "_text_" + clipIdx + ".txt");
+            java.nio.file.Files.writeString(textFile.toPath(), clip.getTextContent());
+            
+            String color = clip.getTextColor().replace("#", "0x");
+            int size = clip.getFontSize();
+            double start = clip.getStartSeconds();
+            double end = start + clip.getDurationSeconds();
+            
+            // Escape the path for FFmpeg: colons and backslashes need escaping
+            String escapedPath = textFile.getAbsolutePath()
+                .replace("\\", "/")        // Windows path separator
+                .replace(":", "\\:")       // colon in drive letters
+                .replace("'", "\\'");      // single quotes
+            
+            // 1) Black box to hide the thumbnail during this text window
+            if (filter.length() > 0) filter.append(",");
+            filter.append(String.format(
+                "drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill:enable='between(t,%.3f,%.3f)'",
+                start, end));
+            
+            // 2) The text drawn on top of that black background
+            filter.append(String.format(
+                ",drawtext=textfile='%s':fontcolor=%s:fontsize=%d:x=(w-text_w)/2:y=(h-text_h)/2:shadowcolor=black@0.8:shadowx=3:shadowy=3:enable='between(t,%.3f,%.3f)'",
+                escapedPath, color, size, start, end));
+            clipIdx++;
+        }
+        
+        if (clipIdx == 0) return v1Master;
+        
+        cmd.add("-vf"); cmd.add(filter.toString());
+        cmd.add("-c:a"); cmd.add("copy");
+        cmd.add("-c:v"); cmd.add(config.getVideoCodec());
+        cmd.add("-b:v"); cmd.add(config.getVideoBitrate());
+        cmd.add("-preset"); cmd.add("fast");
+        cmd.add(textOut.getAbsolutePath());
+        
+        runProcess(cmd, config);
+        return textOut;
     }
 
     // ─── Video Track Processing ────────────────────────────────────────────────
@@ -389,6 +458,7 @@ public class Exporter {
         cmd.add(masterFile.getAbsolutePath());
         return cmd;
     }
+
 
     /** Returns true if the given file contains at least one audio stream. */
     private static boolean hasAudioStream(File file) {

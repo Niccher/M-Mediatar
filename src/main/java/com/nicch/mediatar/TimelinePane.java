@@ -85,6 +85,17 @@ public class TimelinePane extends Region {
                     
                     double dropTime = e.getX() * zoomSecondsPerPixel;
                     int targetTrack = getTrackIndexAtY(e.getY());
+                    // Don't allow dropping media files onto the TEXT track
+                    if (targetTrack >= 0 && tracks.get(targetTrack).getType() == MainWorkhorse.TrackType.TEXT) {
+                        // Find the first VIDEO or AUDIO track instead
+                        targetTrack = -1;
+                        for (int i = 0; i < tracks.size(); i++) {
+                            if (tracks.get(i).getType() != MainWorkhorse.TrackType.TEXT) {
+                                targetTrack = i;
+                                break;
+                            }
+                        }
+                    }
                     if (targetTrack >= 0) {
                         addClipExternal(new MainWorkhorse.MediaItem(file), dropTime, targetTrack);
                         e.setDropCompleted(true);
@@ -121,18 +132,27 @@ public class TimelinePane extends Region {
         });
         
         splitAvItem.setOnAction(e -> {
-            if(selectedClip != null && selectedClip.getTrackIndex() == 0) { 
-                MainWorkhorse.TimelineClip audioExt = new MainWorkhorse.TimelineClip(
-                    selectedClip.getMediaItem(), selectedClip.getStartSeconds(), selectedClip.getDurationSeconds(), 1, selectedClip.getMediaStartOffset()
-                );
-                String origName = selectedClip.getMediaItem().getFileName();
-                int dotIdx = origName.lastIndexOf('.');
-                String audioName = (dotIdx > 0 ? origName.substring(0, dotIdx) : origName) + " (Audio).mp3";
-                audioExt.setAliasName(audioName);
-                
-                tracks.get(1).getClips().add(audioExt);
-                selectedClip.setMuted(true);
-                redraw();
+            if (selectedClip != null) {
+                // Find which track V1 (VIDEO) is on
+                int videoTrackIdx = -1;
+                int audioTrackIdx = -1;
+                for (int i = 0; i < tracks.size(); i++) {
+                    if (tracks.get(i).getType() == MainWorkhorse.TrackType.VIDEO && videoTrackIdx == -1) videoTrackIdx = i;
+                    if (tracks.get(i).getType() == MainWorkhorse.TrackType.AUDIO && audioTrackIdx == -1) audioTrackIdx = i;
+                }
+                if (selectedClip.getTrackIndex() == videoTrackIdx && audioTrackIdx >= 0) {
+                    MainWorkhorse.TimelineClip audioExt = new MainWorkhorse.TimelineClip(
+                        selectedClip.getMediaItem(), selectedClip.getStartSeconds(), selectedClip.getDurationSeconds(), audioTrackIdx, selectedClip.getMediaStartOffset()
+                    );
+                    String origName = selectedClip.getMediaItem().getFileName();
+                    int dotIdx = origName.lastIndexOf('.');
+                    String audioName = (dotIdx > 0 ? origName.substring(0, dotIdx) : origName) + " (Audio).mp3";
+                    audioExt.setAliasName(audioName);
+                    
+                    tracks.get(audioTrackIdx).getClips().add(audioExt);
+                    selectedClip.setMuted(true);
+                    redraw();
+                }
             }
         });
         
@@ -264,7 +284,9 @@ public class TimelinePane extends Region {
         double clipW = clip.getDurationSeconds() / zoomSecondsPerPixel;
         if (x + clipW < 0 || x > getWidth()) return; 
 
-        Color baseColor = type == MainWorkhorse.TrackType.VIDEO ? Color.web("#2980b9") : Color.web("#27ae60");
+        Color baseColor = Color.web("#2980b9");
+        if (type == MainWorkhorse.TrackType.AUDIO) baseColor = Color.web("#27ae60");
+        else if (type == MainWorkhorse.TrackType.TEXT) baseColor = Color.web("#8e44ad");
         
         if (clip == selectedClip) {
             gc.setFill(baseColor.brighter());

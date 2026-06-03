@@ -7,6 +7,7 @@ import javafx.fxml.FXML;
 import javafx.scene.control.*;
 import javafx.scene.input.*;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.VBox;
 import javafx.scene.media.Media;
 import javafx.scene.media.MediaPlayer;
 import javafx.scene.media.MediaView;
@@ -54,6 +55,15 @@ public class MainWorkhorse {
     @FXML private Slider opacitySlider;
     @FXML private Label opacityValueLabel;
     @FXML private Button btnResetClipProps;
+    
+    @FXML private Button btnAddText;
+    @FXML private Label previewTextOverlay;
+    @FXML private VBox textPropertiesBox;
+    @FXML private TextField txtTextContent;
+    @FXML private ColorPicker textColorPicker;
+    @FXML private Slider fontSizeSlider;
+    @FXML private Label fontSizeLabel;
+    @FXML private VBox videoPropertiesBox;
 
     private ProgressBar[] vuBars = new ProgressBar[16];
 
@@ -70,7 +80,7 @@ public class MainWorkhorse {
     private Map<Integer, MediaPlayer> audioPlayers = new HashMap<>();
     private javafx.animation.AnimationTimer timelineTimer;
     private long lastTimerUpdate = 0;
-    public enum TrackType { VIDEO, AUDIO }
+    public enum TrackType { TEXT, VIDEO, AUDIO }
 
     public static class MediaItem {
         private final File file;
@@ -89,6 +99,10 @@ public class MainWorkhorse {
         private double opacity = 1.0;
         private String aliasName;
         private boolean isMuted = false;
+        
+        private String textContent = "New Title";
+        private String textColor = "#ffffff";
+        private int fontSize = 48;
 
         public TimelineClip(MediaItem item, double start, double dur, int track) {
             this.mediaItem = item;
@@ -103,6 +117,15 @@ public class MainWorkhorse {
             this.durationSeconds = dur;
             this.trackIndex = track;
             this.mediaStartOffset = offset;
+        }
+
+        public TimelineClip(String text, double start, double dur, int track) {
+            this.mediaItem = null;
+            this.textContent = text;
+            this.startSeconds = start;
+            this.durationSeconds = dur;
+            this.trackIndex = track;
+            this.aliasName = "Text Title";
         }
 
         public MediaItem getMediaItem() { return mediaItem; }
@@ -122,6 +145,13 @@ public class MainWorkhorse {
         public void setAliasName(String a) { this.aliasName = a; }
         public boolean isMuted() { return isMuted; }
         public void setMuted(boolean muted) { this.isMuted = muted; }
+        
+        public String getTextContent() { return textContent; }
+        public void setTextContent(String t) { this.textContent = t; this.aliasName = t; }
+        public String getTextColor() { return textColor; }
+        public void setTextColor(String c) { this.textColor = c; }
+        public int getFontSize() { return fontSize; }
+        public void setFontSize(int s) { this.fontSize = s; }
     }
 
     public static class TimelineTrack {
@@ -156,9 +186,11 @@ public class MainWorkhorse {
             e.printStackTrace();
         }
 
+        tracks.add(new TimelineTrack("T1", TrackType.TEXT));
         tracks.add(new TimelineTrack("V1", TrackType.VIDEO));
         tracks.add(new TimelineTrack("A1", TrackType.AUDIO));
         tracks.add(new TimelineTrack("A2", TrackType.AUDIO));
+        tracks.add(new TimelineTrack("A3", TrackType.AUDIO));
         
         timelinePane.setTracks(tracks);
         timelinePane.setPlayheadTime(0.0);
@@ -221,6 +253,30 @@ public class MainWorkhorse {
                 if (clip == activeTimelineClip) {
                     mediaView.setOpacity(newV.doubleValue());
                 }
+            }
+        });
+        
+        txtTextContent.textProperty().addListener((obs, oldV, newV) -> {
+            TimelineClip clip = timelinePane.getSelectedClip();
+            if (clip != null && tracks.get(clip.getTrackIndex()).getType() == TrackType.TEXT) {
+                clip.setTextContent(newV);
+                txtClipName.setText(newV);
+                timelinePane.redraw();
+            }
+        });
+        textColorPicker.valueProperty().addListener((obs, oldV, newV) -> {
+            TimelineClip clip = timelinePane.getSelectedClip();
+            if (clip != null && tracks.get(clip.getTrackIndex()).getType() == TrackType.TEXT) {
+                clip.setTextColor("#" + newV.toString().substring(2, 8));
+                timelinePane.redraw();
+            }
+        });
+        fontSizeSlider.valueProperty().addListener((obs, oldV, newV) -> {
+            int size = newV.intValue();
+            fontSizeLabel.setText(String.valueOf(size));
+            TimelineClip clip = timelinePane.getSelectedClip();
+            if (clip != null && tracks.get(clip.getTrackIndex()).getType() == TrackType.TEXT) {
+                clip.setFontSize(size);
             }
         });
     }
@@ -308,7 +364,10 @@ public class MainWorkhorse {
 
         ContextMenu poolMenu = new ContextMenu();
         MenuItem playPreview = new MenuItem("> Play Preview");
-        MenuItem addToTimeline = new MenuItem("+ Add to Timeline (V1)");
+        MenuItem addToV1 = new MenuItem("+ Add to V1 (Video)");
+        MenuItem addToA1 = new MenuItem("+ Add to A1 (Audio 1)");
+        MenuItem addToA2 = new MenuItem("+ Add to A2 (Audio 2)");
+        MenuItem addToA3 = new MenuItem("+ Add to A3 (Audio 3)");
         MenuItem removeFile = new MenuItem("X Remove from Pool");
         
         playPreview.setOnAction(e -> {
@@ -316,11 +375,23 @@ public class MainWorkhorse {
             if (selected != null) loadAndPlayMedia(selected);
         });
         
-        addToTimeline.setOnAction(e -> {
+        addToV1.setOnAction(e -> {
             MediaItem selected = mediaListView.getSelectionModel().getSelectedItem();
-            if (selected != null) timelinePane.addClipExternal(selected, 0.0, 0); 
+            if (selected != null) addToTrackByType(selected, TrackType.VIDEO, 0);
         });
-
+        addToA1.setOnAction(e -> {
+            MediaItem selected = mediaListView.getSelectionModel().getSelectedItem();
+            if (selected != null) addToTrackByType(selected, TrackType.AUDIO, 0);
+        });
+        addToA2.setOnAction(e -> {
+            MediaItem selected = mediaListView.getSelectionModel().getSelectedItem();
+            if (selected != null) addToTrackByType(selected, TrackType.AUDIO, 1);
+        });
+        addToA3.setOnAction(e -> {
+            MediaItem selected = mediaListView.getSelectionModel().getSelectedItem();
+            if (selected != null) addToTrackByType(selected, TrackType.AUDIO, 2);
+        });
+        
         removeFile.setOnAction(e -> {
             MediaItem selected = mediaListView.getSelectionModel().getSelectedItem();
             if (selected != null) mediaItems.remove(selected);
@@ -334,7 +405,7 @@ public class MainWorkhorse {
             if (selected != null) openInFileManager(selected.getFile());
         });
 
-        poolMenu.getItems().addAll(playPreview, addToTimeline, new SeparatorMenuItem(), showInFM, new SeparatorMenuItem(), removeFile);
+        poolMenu.getItems().addAll(playPreview, addToV1, addToA1, addToA2, addToA3, new SeparatorMenuItem(), showInFM, new SeparatorMenuItem(), removeFile);
         mediaListView.setContextMenu(poolMenu);
 
         mediaListView.setOnDragDetected(event -> {
@@ -372,6 +443,24 @@ public class MainWorkhorse {
         });
     }
     
+    private void addToTrackByType(MediaItem item, TrackType type, int nth) {
+        int count = 0;
+        for (int i = 0; i < tracks.size(); i++) {
+            if (tracks.get(i).getType() == type) {
+                if (count == nth) {
+                    // Place clip after the last existing clip on this track
+                    double startAt = tracks.get(i).getClips().stream()
+                        .mapToDouble(c -> c.getStartSeconds() + c.getDurationSeconds())
+                        .max().orElse(0.0);
+                    timelinePane.addClipExternal(item, startAt, i);
+                    return;
+                }
+                count++;
+            }
+        }
+        showAlert("Track Not Found", "No matching track of that type found.");
+    }
+
     private void updateInspector(TimelineClip clip) {
         if (clip == null) {
             txtClipName.setText("--");
@@ -381,21 +470,43 @@ public class MainWorkhorse {
             btnResetClipProps.setDisable(true);
             lblClipDuration.setText("Duration: --");
             lblClipExt.setText("Type: --");
+            textPropertiesBox.setVisible(false);
+            textPropertiesBox.setManaged(false);
+            videoPropertiesBox.setVisible(true);
+            videoPropertiesBox.setManaged(true);
         } else {
             txtClipName.setText(clip.getAliasName());
             txtClipName.setDisable(false);
-            speedSlider.setDisable(false);
-            speedSlider.setValue(clip.getPlaybackSpeed());
-            speedValueLabel.setText(String.format("%.2fx", clip.getPlaybackSpeed()));
-            opacitySlider.setDisable(false);
-            opacitySlider.setValue(clip.getOpacity());
-            opacityValueLabel.setText((int)(clip.getOpacity() * 100) + "%");
-            btnResetClipProps.setDisable(false);
-            
             lblClipDuration.setText(String.format("Duration: %.2fs", clip.getDurationSeconds()));
-            String name = clip.getMediaItem().getFileName();
-            int dotIndex = name.lastIndexOf('.');
-            lblClipExt.setText("Type: " + (dotIndex > 0 ? name.substring(dotIndex + 1).toUpperCase() : "Unknown"));
+            
+            if (tracks.get(clip.getTrackIndex()).getType() == TrackType.TEXT) {
+                lblClipExt.setText("Type: TEXT");
+                textPropertiesBox.setVisible(true);
+                textPropertiesBox.setManaged(true);
+                videoPropertiesBox.setVisible(false);
+                videoPropertiesBox.setManaged(false);
+                
+                txtTextContent.setText(clip.getTextContent());
+                textColorPicker.setValue(javafx.scene.paint.Color.web(clip.getTextColor()));
+                fontSizeSlider.setValue(clip.getFontSize());
+                btnResetClipProps.setDisable(true);
+            } else {
+                String name = clip.getMediaItem().getFileName();
+                int dotIndex = name.lastIndexOf('.');
+                lblClipExt.setText("Type: " + (dotIndex > 0 ? name.substring(dotIndex + 1).toUpperCase() : "Unknown"));
+                textPropertiesBox.setVisible(false);
+                textPropertiesBox.setManaged(false);
+                videoPropertiesBox.setVisible(true);
+                videoPropertiesBox.setManaged(true);
+                
+                speedSlider.setDisable(false);
+                speedSlider.setValue(clip.getPlaybackSpeed());
+                speedValueLabel.setText(String.format("%.2fx", clip.getPlaybackSpeed()));
+                opacitySlider.setDisable(false);
+                opacitySlider.setValue(clip.getOpacity());
+                opacityValueLabel.setText((int)(clip.getOpacity() * 100) + "%");
+                btnResetClipProps.setDisable(false);
+            }
         }
     }
 
@@ -548,7 +659,7 @@ public class MainWorkhorse {
     @FXML 
     private void togglePlayPause() {
         if (currentMediaPlayer == null && timelinePane.getSelectedClip() == null) {
-            if (!tracks.isEmpty() && !tracks.get(0).getClips().isEmpty()) toggleTimelinePlayback();
+            if (!tracks.isEmpty() && tracks.stream().anyMatch(t -> !t.getClips().isEmpty())) toggleTimelinePlayback();
             else showAlert("Playback", "Select a clip to play or add clips to the timeline.");
             return;
         }
@@ -594,10 +705,19 @@ public class MainWorkhorse {
 
     @FXML
     private void playTimeline() {
-        if (!tracks.isEmpty() && !tracks.get(0).getClips().isEmpty()) {
+        if (!tracks.isEmpty() && tracks.stream().anyMatch(t -> !t.getClips().isEmpty())) {
             toggleTimelinePlayback();
         } else {
             showAlert("Timeline", "Add clips to the timeline first by dragging them from the Media Pool.");
+        }
+    }
+
+    @FXML
+    private void handleAddTextAction() {
+        if (!tracks.isEmpty() && tracks.get(0).getType() == TrackType.TEXT) {
+            TimelineClip textClip = new TimelineClip("New Title", 0, 5.0, 0);
+            tracks.get(0).getClips().add(textClip);
+            timelinePane.redraw();
         }
     }
 
@@ -621,9 +741,27 @@ public class MainWorkhorse {
     }
 
     private void evaluateTimelinePlayback(double globalTime) {
-        TimelineClip clipUnderPlayhead = null;
-        if (!tracks.isEmpty()) {
+        TimelineClip activeTextClip = null;
+        if (!tracks.isEmpty() && tracks.get(0).getType() == TrackType.TEXT) {
             for (TimelineClip clip : tracks.get(0).getClips()) {
+                if (globalTime >= clip.getStartSeconds() && globalTime < clip.getStartSeconds() + clip.getDurationSeconds()) {
+                    activeTextClip = clip;
+                    break;
+                }
+            }
+        }
+        if (activeTextClip != null && previewTextOverlay != null) {
+            previewTextOverlay.setText(activeTextClip.getTextContent());
+            previewTextOverlay.setStyle("-fx-font-size: " + activeTextClip.getFontSize() + "px; -fx-text-fill: " + activeTextClip.getTextColor() + "; -fx-effect: dropshadow(gaussian, black, 2, 1.0, 0, 0);");
+            previewTextOverlay.setVisible(true);
+        } else if (previewTextOverlay != null) {
+            previewTextOverlay.setVisible(false);
+        }
+
+        TimelineClip clipUnderPlayhead = null;
+        int videoTrackIndex = tracks.size() > 1 && tracks.get(1).getType() == TrackType.VIDEO ? 1 : 0;
+        if (!tracks.isEmpty() && tracks.get(videoTrackIndex).getType() == TrackType.VIDEO) {
+            for (TimelineClip clip : tracks.get(videoTrackIndex).getClips()) {
                 if (globalTime >= clip.getStartSeconds() && globalTime < clip.getStartSeconds() + clip.getDurationSeconds()) {
                     clipUnderPlayhead = clip;
                     break;
