@@ -25,16 +25,25 @@ public class Exporter {
                 boolean audioOnlyOutput = config.isAudioOnlyFormat();
                 File v1Master = null;
 
-                // Phase 1: Process V1 (video track)
+                // Phase 1: Merge V1 and V2 into one unified video track (sorted by start time)
+                // V2 clips are treated identically to V1 — same pipeline, full size.
                 List<MainWorkhorse.TimelineTrack> videoTracks = tracks.stream().filter(t -> t.getType() == MainWorkhorse.TrackType.VIDEO).collect(java.util.stream.Collectors.toList());
                 MainWorkhorse.TimelineTrack v1 = videoTracks.size() > 0 ? videoTracks.get(0) : null;
                 MainWorkhorse.TimelineTrack v2 = videoTracks.size() > 1 ? videoTracks.get(1) : null;
                 
-                if (!audioOnlyOutput && v1 != null && !v1.getClips().isEmpty()) {
-                    v1Master = processVideoTrack(v1, tempDir, "v1", config, audioThumbnail);
+                List<MainWorkhorse.TimelineClip> mergedVideoClips = new ArrayList<>();
+                if (v1 != null) mergedVideoClips.addAll(v1.getClips());
+                if (v2 != null) mergedVideoClips.addAll(v2.getClips());
+                mergedVideoClips.sort(java.util.Comparator.comparingDouble(MainWorkhorse.TimelineClip::getStartSeconds));
+
+                if (!audioOnlyOutput && !mergedVideoClips.isEmpty()) {
+                    // Build a synthetic track with the merged clips
+                    MainWorkhorse.TimelineTrack mergedTrack = new MainWorkhorse.TimelineTrack("V_MERGED", MainWorkhorse.TrackType.VIDEO);
+                    mergedTrack.getClips().addAll(mergedVideoClips);
+                    v1Master = processVideoTrack(mergedTrack, tempDir, "v_merged", config, audioThumbnail);
                 }
 
-                // Gather all audio tracks (both V1 audio and A1/A2)
+                // Gather all audio tracks (A1/A2)
                 List<File> audioMasters = new ArrayList<>();
                 for (int i = 0; i < tracks.size(); i++) {
                     MainWorkhorse.TimelineTrack track = tracks.get(i);
@@ -64,25 +73,21 @@ public class Exporter {
                     throw new Exception("Timeline is empty — nothing to render!");
                 }
 
-                // Build audio mixing — always include V1's embedded audio when V1 exists
-                // Total audio streams = v1 audio (if present) + all explicit audio track files
+                // Build audio mixing
                 List<String> audioLabels = new ArrayList<>();
                 if (v1Master != null) {
-                    audioLabels.add("[0:a]"); // V1's embedded audio
+                    audioLabels.add("[0:a]"); // merged video track embedded audio
                 }
                 for (int i = 0; i < audioMasters.size(); i++) {
-                    // Inputs are: index 0=v1Master (if present), then audioMasters
                     int inputIdx = (v1Master != null ? 1 : 0) + i;
                     audioLabels.add("[" + inputIdx + ":a]");
                 }
 
-                // Index of first audio master input (0 if no v1, 1 if v1 present)
                 int firstAudioIdx = (v1Master != null) ? 1 : 0;
                 boolean hasVideoOutput = !config.isAudioOnlyFormat()
                         && (v1Master != null || !audioMasters.isEmpty());
 
                 if (audioLabels.size() > 1) {
-                    // Multiple audio sources — mix them with amix
                     StringBuilder filterComplex = new StringBuilder();
                     for (String label : audioLabels) filterComplex.append(label);
                     filterComplex.append("amix=inputs=").append(audioLabels.size())
@@ -91,48 +96,41 @@ public class Exporter {
                     if (v1Master != null) {
                         mixCmd.add("-map"); mixCmd.add("0:v");
                     } else if (hasVideoOutput) {
-                        // Use thumbnail video from first audio master
                         mixCmd.add("-map"); mixCmd.add(firstAudioIdx + ":v");
                     }
                     mixCmd.add("-map"); mixCmd.add("[aout]");
                 } else if (audioLabels.size() == 1) {
-                    // Single audio source — map it directly
                     if (v1Master != null) {
                         mixCmd.add("-map"); mixCmd.add("0:v");
                         mixCmd.add("-map"); mixCmd.add("0:a?");
                     } else {
-                        // Single audio master (now .mp4 with thumbnail video)
                         if (hasVideoOutput) { mixCmd.add("-map"); mixCmd.add(firstAudioIdx + ":v"); }
                         mixCmd.add("-map"); mixCmd.add(firstAudioIdx + ":a");
                     }
                 } else {
-                    // No audio at all — map video only
                     if (v1Master != null) { mixCmd.add("-map"); mixCmd.add("0:v"); }
                 }
 
-                // Codec settings
+                // Codec settings — only re-encode if text overlay needed
                 MainWorkhorse.TimelineTrack t1 = tracks.stream().filter(t -> t.getType() == MainWorkhorse.TrackType.TEXT).findFirst().orElse(null);
                 boolean hasText = t1 != null && !t1.getClips().isEmpty();
-                boolean hasPiP = v2 != null && !v2.getClips().isEmpty();
-                boolean needsOverlayPass = hasText || hasPiP;
-                
+
                 if (hasVideoOutput) {
-                    // Always use copy if we have an overlay pass to do, to save time
-                    mixCmd.add("-c:v"); mixCmd.add(needsOverlayPass ? "copy" : config.getVideoCodec());
-                    if (!needsOverlayPass) { mixCmd.add("-b:v"); mixCmd.add(config.getVideoBitrate()); mixCmd.add("-preset"); mixCmd.add("fast"); }
+                    mixCmd.add("-c:v"); mixCmd.add(hasText ? "copy" : config.getVideoCodec());
+                    if (!hasText) { mixCmd.add("-b:v"); mixCmd.add(config.getVideoBitrate()); mixCmd.add("-preset"); mixCmd.add("fast"); }
                 }
                 mixCmd.add("-c:a"); mixCmd.add(config.getAudioCodec());
                 mixCmd.add("-b:a"); mixCmd.add(config.getAudioBitrate());
-                
-                File mixOut = (needsOverlayPass && hasVideoOutput) ? new File(tempDir, "mixed_pre_overlay.mp4") : config.getDestinationFile();
+
+                File mixOut = (hasText && hasVideoOutput) ? new File(tempDir, "mixed_pre_text.mp4") : config.getDestinationFile();
                 mixCmd.add(mixOut.getAbsolutePath());
 
                 config.getCallback().onLog("\n▶ Final Mixdown...");
                 runProcess(mixCmd, config);
-                
-                // Phase 5: Overlay PiP and Text Track
-                if (needsOverlayPass && hasVideoOutput) {
-                    File textOut = processOverlayPass(t1, v2, mixOut, tempDir, "overlay", config);
+
+                // Phase 5: Text overlay only (V2 is now merged into main video, no PiP pass)
+                if (hasText && hasVideoOutput) {
+                    File textOut = processOverlayPass(t1, null, mixOut, tempDir, "overlay", config);
                     java.nio.file.Files.copy(textOut.toPath(), config.getDestinationFile().toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                 }
 
