@@ -65,13 +65,24 @@ public class ExportDialogController {
 
         detectedFileManager = detectFileManager();
 
-        // When format changes to audio-only, disable video settings
+        // When format changes to audio-only, disable video settings and auto-select correct audio codec
         cbFormat.valueProperty().addListener((obs, oldVal, newVal) -> {
             boolean audioOnly = isAudioOnlyExt(newVal);
             cbResolution.setDisable(audioOnly);
             cbFramerate.setDisable(audioOnly);
             cbBitrate.setDisable(audioOnly);
             cbVideoCodec.setDisable(audioOnly);
+
+            // Force compatible audio codec for strict containers
+            if (".mp3".equals(newVal)) {
+                cbAudioCodec.setValue("mp3");
+            } else if (".flac".equals(newVal)) {
+                cbAudioCodec.setValue("flac");
+            } else if (".ogg".equals(newVal)) {
+                cbAudioCodec.setValue("libvorbis");
+            } else if (".m4a".equals(newVal) || ".aac".equals(newVal)) {
+                cbAudioCodec.setValue("aac");
+            }
         });
 
         // Apply the current global theme to this dialog
@@ -80,6 +91,23 @@ public class ExportDialogController {
 
     public void setTracks(List<MainWorkhorse.TimelineTrack> tracks) {
         this.tracks = tracks;
+        
+        // Auto-select audio format if the timeline only contains audio clips
+        if (tracks != null && !tracks.isEmpty()) {
+            boolean hasVideo = !tracks.get(0).getClips().isEmpty();
+            boolean hasAudio = false;
+            
+            for (int i = 1; i < tracks.size(); i++) {
+                if (!tracks.get(i).getClips().isEmpty()) {
+                    hasAudio = true;
+                    break;
+                }
+            }
+            
+            if (!hasVideo && hasAudio) {
+                cbFormat.setValue(".mp3");
+            }
+        }
     }
 
     @FXML

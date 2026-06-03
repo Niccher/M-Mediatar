@@ -110,7 +110,8 @@ public class TimelinePane extends Region {
         rightClickMenu = new ContextMenu();
         
         MenuItem playItem = new MenuItem("> Play / Pause");
-        MenuItem splitAvItem = new MenuItem("-- Split Audio and Video");
+        MenuItem splitAvItem = new MenuItem("-- Detach Audio");
+        MenuItem muteItem = new MenuItem("🔇 Toggle Mute");
         MenuItem trimItem = new MenuItem("[] Trim (Cut 1s from ends)");
         MenuItem mergeItem = new MenuItem("++ Merge with next on track");
         MenuItem removeItem = new MenuItem("X  Remove Clip");
@@ -124,7 +125,20 @@ public class TimelinePane extends Region {
                 MainWorkhorse.TimelineClip audioExt = new MainWorkhorse.TimelineClip(
                     selectedClip.getMediaItem(), selectedClip.getStartSeconds(), selectedClip.getDurationSeconds(), 1, selectedClip.getMediaStartOffset()
                 );
+                String origName = selectedClip.getMediaItem().getFileName();
+                int dotIdx = origName.lastIndexOf('.');
+                String audioName = (dotIdx > 0 ? origName.substring(0, dotIdx) : origName) + " (Audio).mp3";
+                audioExt.setAliasName(audioName);
+                
                 tracks.get(1).getClips().add(audioExt);
+                selectedClip.setMuted(true);
+                redraw();
+            }
+        });
+        
+        muteItem.setOnAction(e -> {
+            if (selectedClip != null) {
+                selectedClip.setMuted(!selectedClip.isMuted());
                 redraw();
             }
         });
@@ -154,7 +168,7 @@ public class TimelinePane extends Region {
         
         removeItem.setOnAction(e -> deleteSelectedClip());
         
-        rightClickMenu.getItems().addAll(playItem, splitAvItem, trimItem, mergeItem, new SeparatorMenuItem(), removeItem);
+        rightClickMenu.getItems().addAll(playItem, splitAvItem, muteItem, trimItem, mergeItem, new SeparatorMenuItem(), removeItem);
     }
 
     public void setTracks(List<MainWorkhorse.TimelineTrack> tracks) {
@@ -265,7 +279,9 @@ public class TimelinePane extends Region {
         gc.strokeRect(x, y + 4, clipW, trackH - 8);
 
         gc.setFill(Color.WHITE);
-        gc.fillText(clip.getMediaItem().getFileName(), x + 5, y + (trackH / 2) + 4);
+        String label = clip.getAliasName();
+        if (clip.isMuted()) label = "🔇 " + label;
+        gc.fillText(label, x + 5, y + (trackH / 2) + 4);
         
         gc.setFill(Color.rgb(0, 0, 0, 0.3));
         gc.fillRect(x, y + 4, 6, trackH - 8);

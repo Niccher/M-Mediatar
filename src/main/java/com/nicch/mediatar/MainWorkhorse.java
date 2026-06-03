@@ -88,6 +88,7 @@ public class MainWorkhorse {
         private double playbackSpeed = 1.0;
         private double opacity = 1.0;
         private String aliasName;
+        private boolean isMuted = false;
 
         public TimelineClip(MediaItem item, double start, double dur, int track) {
             this.mediaItem = item;
@@ -119,6 +120,8 @@ public class MainWorkhorse {
         public void setOpacity(double o) { this.opacity = o; }
         public String getAliasName() { return aliasName != null ? aliasName : mediaItem.getFileName(); }
         public void setAliasName(String a) { this.aliasName = a; }
+        public boolean isMuted() { return isMuted; }
+        public void setMuted(boolean muted) { this.isMuted = muted; }
     }
 
     public static class TimelineTrack {
@@ -727,7 +730,7 @@ public class MainWorkhorse {
         }
 
         setupAudioMeters(currentMediaPlayer);
-        currentMediaPlayer.setVolume(isMuted ? 0 : volumeSlider.getValue());
+        currentMediaPlayer.setVolume((isMuted || clip.isMuted()) ? 0 : volumeSlider.getValue());
         
         currentMediaPlayer.setOnReady(() -> {
             double localTime = globalTime - clip.getStartSeconds();
@@ -741,7 +744,7 @@ public class MainWorkhorse {
     private void loadAndPlayTimelineAudioClip(int trackIdx, TimelineClip clip, double globalTime) {
         Media media = new Media(clip.getMediaItem().getFile().toURI().toString());
         MediaPlayer newPlayer = new MediaPlayer(media);
-        newPlayer.setVolume(isMuted ? 0 : volumeSlider.getValue());
+        newPlayer.setVolume((isMuted || clip.isMuted()) ? 0 : volumeSlider.getValue());
         audioPlayers.put(trackIdx, newPlayer);
         
         newPlayer.setOnReady(() -> {

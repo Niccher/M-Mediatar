@@ -223,7 +223,7 @@ public class Exporter {
         String res = config.getResolution().replace("x", ":");
 
         // Probe once so we can build the correct filter_complex ("[0:a?]" is invalid inside filtergraphs)
-        boolean srcHasAudio = hasAudioStream(clip.getMediaItem().getFile());
+        boolean srcHasAudio = hasAudioStream(clip.getMediaItem().getFile()) && !clip.isMuted();
 
         List<String> cmd = new ArrayList<>();
         cmd.add("ffmpeg"); cmd.add("-hide_banner"); cmd.add("-y");
