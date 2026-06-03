@@ -26,12 +26,12 @@ public class Exporter {
                 File v1Master = null;
 
                 // Phase 1: Process V1 (video track)
-                if (!audioOnlyOutput) {
-                    MainWorkhorse.TimelineTrack v1 = tracks.stream().filter(t -> t.getType() == MainWorkhorse.TrackType.VIDEO).findFirst().orElse(null);
-                    
-                    if (v1 != null && !v1.getClips().isEmpty()) {
-                        v1Master = processVideoTrack(v1, tempDir, "v1", config, audioThumbnail);
-                    }
+                List<MainWorkhorse.TimelineTrack> videoTracks = tracks.stream().filter(t -> t.getType() == MainWorkhorse.TrackType.VIDEO).collect(java.util.stream.Collectors.toList());
+                MainWorkhorse.TimelineTrack v1 = videoTracks.size() > 0 ? videoTracks.get(0) : null;
+                MainWorkhorse.TimelineTrack v2 = videoTracks.size() > 1 ? videoTracks.get(1) : null;
+                
+                if (!audioOnlyOutput && v1 != null && !v1.getClips().isEmpty()) {
+                    v1Master = processVideoTrack(v1, tempDir, "v1", config, audioThumbnail);
                 }
 
                 // Gather all audio tracks (both V1 audio and A1/A2)
@@ -111,27 +111,28 @@ public class Exporter {
                 }
 
                 // Codec settings
-                // If we have text to burn in, we MUST re-encode the video (cannot use copy)
                 MainWorkhorse.TimelineTrack t1 = tracks.stream().filter(t -> t.getType() == MainWorkhorse.TrackType.TEXT).findFirst().orElse(null);
                 boolean hasText = t1 != null && !t1.getClips().isEmpty();
+                boolean hasPiP = v2 != null && !v2.getClips().isEmpty();
+                boolean needsOverlayPass = hasText || hasPiP;
                 
                 if (hasVideoOutput) {
-                    mixCmd.add("-c:v"); mixCmd.add(hasText ? config.getVideoCodec() : "copy");
-                    if (hasText) { mixCmd.add("-b:v"); mixCmd.add(config.getVideoBitrate()); mixCmd.add("-preset"); mixCmd.add("fast"); }
+                    // Always use copy if we have an overlay pass to do, to save time
+                    mixCmd.add("-c:v"); mixCmd.add(needsOverlayPass ? "copy" : config.getVideoCodec());
+                    if (!needsOverlayPass) { mixCmd.add("-b:v"); mixCmd.add(config.getVideoBitrate()); mixCmd.add("-preset"); mixCmd.add("fast"); }
                 }
                 mixCmd.add("-c:a"); mixCmd.add(config.getAudioCodec());
                 mixCmd.add("-b:a"); mixCmd.add(config.getAudioBitrate());
                 
-                // If we have text and a video output, route to an intermediate file first
-                File mixOut = (hasText && hasVideoOutput) ? new File(tempDir, "mixed_no_text.mp4") : config.getDestinationFile();
+                File mixOut = (needsOverlayPass && hasVideoOutput) ? new File(tempDir, "mixed_pre_overlay.mp4") : config.getDestinationFile();
                 mixCmd.add(mixOut.getAbsolutePath());
 
                 config.getCallback().onLog("\n▶ Final Mixdown...");
                 runProcess(mixCmd, config);
                 
-                // Phase 5: Overlay Text Track (works for both video-only and audio-only timelines)
-                if (hasText && hasVideoOutput) {
-                    File textOut = processTextTrackOverlay(t1, mixOut, tempDir, "t1", config);
+                // Phase 5: Overlay PiP and Text Track
+                if (needsOverlayPass && hasVideoOutput) {
+                    File textOut = processOverlayPass(t1, v2, mixOut, tempDir, "overlay", config);
                     java.nio.file.Files.copy(textOut.toPath(), config.getDestinationFile().toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                 }
 
@@ -151,50 +152,96 @@ public class Exporter {
         }).start();
     }
 
-    // ─── Text Track Processing ────────────────────────────────────────────────
-    private static File processTextTrackOverlay(MainWorkhorse.TimelineTrack track, File v1Master, File tempDir, String prefix, ExportConfig config) throws Exception {
-        config.getCallback().onLog("\n── Overlaying Text Track ──");
+    // ─── Overlay Track Processing ────────────────────────────────────────────────
+    private static File processOverlayPass(MainWorkhorse.TimelineTrack t1, MainWorkhorse.TimelineTrack v2, File v1Master, File tempDir, String prefix, ExportConfig config) throws Exception {
+        config.getCallback().onLog("\n── Applying Overlays (PiP / Text) ──");
         File textOut = new File(tempDir, prefix + "_master.mp4");
         
         List<String> cmd = new ArrayList<>();
         cmd.add("ffmpeg"); cmd.add("-hide_banner"); cmd.add("-y");
         cmd.add("-i"); cmd.add(v1Master.getAbsolutePath());
         
-        StringBuilder filter = new StringBuilder();
-        int clipIdx = 0;
-        for (MainWorkhorse.TimelineClip clip : track.getClips()) {
-            if (clip.getTextContent() == null || clip.getTextContent().trim().isEmpty()) continue;
-            
-            File textFile = new File(tempDir, prefix + "_text_" + clipIdx + ".txt");
-            java.nio.file.Files.writeString(textFile.toPath(), clip.getTextContent());
-            
-            String color = clip.getTextColor().replace("#", "0x");
-            int size = clip.getFontSize();
-            double start = clip.getStartSeconds();
-            double end = start + clip.getDurationSeconds();
-            
-            // Escape the path for FFmpeg: colons and backslashes need escaping
-            String escapedPath = textFile.getAbsolutePath()
-                .replace("\\", "/")        // Windows path separator
-                .replace(":", "\\:")       // colon in drive letters
-                .replace("'", "\\'");      // single quotes
-            
-            // 1) Black box to hide the thumbnail during this text window
-            if (filter.length() > 0) filter.append(",");
-            filter.append(String.format(
-                "drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill:enable='between(t,%.3f,%.3f)'",
-                start, end));
-            
-            // 2) The text drawn on top of that black background
-            filter.append(String.format(
-                ",drawtext=textfile='%s':fontcolor=%s:fontsize=%d:x=(w-text_w)/2:y=(h-text_h)/2:shadowcolor=black@0.8:shadowx=3:shadowy=3:enable='between(t,%.3f,%.3f)'",
-                escapedPath, color, size, start, end));
-            clipIdx++;
+        List<File> v2ProcessedClips = new ArrayList<>();
+        if (v2 != null && !v2.getClips().isEmpty()) {
+            int clipIdx = 0;
+            for (MainWorkhorse.TimelineClip clip : v2.getClips()) {
+                File processed = processPiPClip(clip, tempDir, "v2_pip_" + clipIdx, config);
+                v2ProcessedClips.add(processed);
+                cmd.add("-i"); cmd.add(processed.getAbsolutePath());
+                clipIdx++;
+            }
         }
         
-        if (clipIdx == 0) return v1Master;
+        StringBuilder filter = new StringBuilder();
+        String currentPad = "[0:v]";
+        int inputIdx = 1;
+        int v2Idx = 0;
+
+        if (!v2ProcessedClips.isEmpty()) {
+            for (MainWorkhorse.TimelineClip clip : v2.getClips()) {
+                String inPad = "[" + inputIdx + ":v]";
+                String scalePad = "[v2_scale_" + v2Idx + "]";
+                String outPad = "[ov_" + v2Idx + "]";
+                
+                double s = clip.getScale();
+                filter.append(inPad).append("scale=iw*").append(s).append(":ih*").append(s).append(scalePad).append(";");
+                
+                String xExpr = "(W/2)+(" + clip.getPosX() + "*3)-(w/2)";
+                String yExpr = "(H/2)+(" + clip.getPosY() + "*3)-(h/2)";
+                
+                double start = clip.getStartSeconds();
+                double end = start + clip.getDurationSeconds();
+                filter.append(currentPad).append(scalePad).append("overlay=x='").append(xExpr).append("':y='").append(yExpr)
+                      .append("':enable='between(t,").append(start).append(",").append(end).append(")'").append(outPad).append(";");
+                
+                currentPad = outPad;
+                inputIdx++;
+                v2Idx++;
+            }
+        }
         
-        cmd.add("-vf"); cmd.add(filter.toString());
+        boolean hasText = false;
+        StringBuilder textFilters = new StringBuilder();
+        if (t1 != null && !t1.getClips().isEmpty()) {
+            int clipIdx = 0;
+            for (MainWorkhorse.TimelineClip clip : t1.getClips()) {
+                if (clip.getTextContent() == null || clip.getTextContent().trim().isEmpty()) continue;
+                hasText = true;
+                File textFile = new File(tempDir, prefix + "_text_" + clipIdx + ".txt");
+                java.nio.file.Files.writeString(textFile.toPath(), clip.getTextContent());
+                
+                String color = clip.getTextColor().replace("#", "0x");
+                int size = clip.getFontSize();
+                double start = clip.getStartSeconds();
+                double end = start + clip.getDurationSeconds();
+                
+                String escapedPath = textFile.getAbsolutePath().replace("\\", "/").replace(":", "\\:").replace("'", "\\'");
+                
+                if (textFilters.length() > 0) textFilters.append(",");
+                textFilters.append(String.format("drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill:enable='between(t,%.3f,%.3f)'", start, end));
+                textFilters.append(String.format(",drawtext=textfile='%s':fontcolor=%s:fontsize=%d:x=(w-text_w)/2:y=(h-text_h)/2:shadowcolor=black@0.8:shadowx=3:shadowy=3:enable='between(t,%.3f,%.3f)'", escapedPath, color, size, start, end));
+                clipIdx++;
+            }
+        }
+
+        if (v2ProcessedClips.isEmpty() && !hasText) return v1Master;
+        
+        if (v2ProcessedClips.isEmpty() && hasText) {
+            cmd.add("-vf"); cmd.add(textFilters.toString());
+            cmd.add("-map"); cmd.add("0:v");
+            cmd.add("-map"); cmd.add("0:a?");
+        } else if (!v2ProcessedClips.isEmpty() && !hasText) {
+            filter.setLength(filter.length() - 1);
+            cmd.add("-filter_complex"); cmd.add(filter.toString());
+            cmd.add("-map"); cmd.add(currentPad);
+            cmd.add("-map"); cmd.add("0:a?");
+        } else if (!v2ProcessedClips.isEmpty() && hasText) {
+            filter.append(currentPad).append(textFilters.toString()).append("[outv]");
+            cmd.add("-filter_complex"); cmd.add(filter.toString());
+            cmd.add("-map"); cmd.add("[outv]");
+            cmd.add("-map"); cmd.add("0:a?");
+        }
+        
         cmd.add("-c:a"); cmd.add("copy");
         cmd.add("-c:v"); cmd.add(config.getVideoCodec());
         cmd.add("-b:v"); cmd.add(config.getVideoBitrate());
@@ -285,6 +332,41 @@ public class Exporter {
     }
 
     // ─── Individual Clip Processors ───────────────────────────────────────────
+    private static File processPiPClip(MainWorkhorse.TimelineClip clip, File tempDir,
+                                         String name, ExportConfig config) throws Exception {
+        File out = new File(tempDir, name + ".mp4");
+        boolean srcHasAudio = hasAudioStream(clip.getMediaItem().getFile());
+        double speed = clip.getPlaybackSpeed();
+        List<String> cmd = new ArrayList<>();
+        cmd.add("ffmpeg"); cmd.add("-hide_banner"); cmd.add("-y");
+        cmd.add("-ss"); cmd.add(String.valueOf(clip.getMediaStartOffset()));
+        cmd.add("-t"); cmd.add(String.valueOf(clip.getDurationSeconds()));
+        cmd.add("-i"); cmd.add(clip.getMediaItem().getFile().getAbsolutePath());
+        cmd.add("-f"); cmd.add("lavfi");
+        cmd.add("-i"); cmd.add("anullsrc=r=48000:cl=stereo");
+
+        String res = config.getResolution().replace("x", ":");
+        String vFilter = "scale=" + res + ":force_original_aspect_ratio=decrease,fps=" + config.getFramerate() + ",format=yuv420p";
+        if (speed != 1.0) vFilter += ",setpts=" + (1.0 / speed) + "*PTS";
+
+        String aFilter = "atempo=" + clampAtempo(speed) + ",aformat=sample_rates=48000:channel_layouts=stereo";
+        String filterComplex = srcHasAudio
+                ? "[0:v]" + vFilter + "[v];[0:a]" + aFilter + "[a]"
+                : "[0:v]" + vFilter + "[v];[1:a]aformat=sample_rates=48000:channel_layouts=stereo[a]";
+
+        cmd.add("-filter_complex"); cmd.add(filterComplex);
+        cmd.add("-map"); cmd.add("[v]");
+        cmd.add("-map"); cmd.add("[a]");
+        cmd.add("-c:v"); cmd.add(config.getVideoCodec());
+        cmd.add("-b:v"); cmd.add(config.getVideoBitrate());
+        cmd.add("-preset"); cmd.add("fast");
+        cmd.add("-c:a"); cmd.add("aac");
+        cmd.add("-b:a"); cmd.add(config.getAudioBitrate());
+        cmd.add(out.getAbsolutePath());
+        runProcess(cmd, config);
+        return out;
+    }
+
     private static File processVideoClip(MainWorkhorse.TimelineClip clip, File tempDir,
                                          String name, ExportConfig config) throws Exception {
         File out = new File(tempDir, name + ".mp4");

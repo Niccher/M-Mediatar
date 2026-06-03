@@ -64,6 +64,13 @@ public class MainWorkhorse {
     @FXML private Slider fontSizeSlider;
     @FXML private Label fontSizeLabel;
     @FXML private VBox videoPropertiesBox;
+    @FXML private MediaView mediaViewV2;
+    @FXML private Slider scaleSlider;
+    @FXML private Label scaleValueLabel;
+    @FXML private Slider posXSlider;
+    @FXML private Label posXValueLabel;
+    @FXML private Slider posYSlider;
+    @FXML private Label posYValueLabel;
 
     private ProgressBar[] vuBars = new ProgressBar[16];
 
@@ -76,6 +83,8 @@ public class MainWorkhorse {
     private boolean isPlayingTimeline = false;
     private double globalPlayheadTime = 0.0;
     private TimelineClip activeTimelineClip = null;
+    private TimelineClip activeTimelineClipV2 = null;
+    private MediaPlayer currentPlayerV2;
     private Map<Integer, TimelineClip> activeAudioClips = new HashMap<>();
     private Map<Integer, MediaPlayer> audioPlayers = new HashMap<>();
     private javafx.animation.AnimationTimer timelineTimer;
@@ -103,6 +112,10 @@ public class MainWorkhorse {
         private String textContent = "New Title";
         private String textColor = "#ffffff";
         private int fontSize = 48;
+        
+        private double scale = 1.0;
+        private double posX = 0.0;
+        private double posY = 0.0;
 
         public TimelineClip(MediaItem item, double start, double dur, int track) {
             this.mediaItem = item;
@@ -146,6 +159,12 @@ public class MainWorkhorse {
         public boolean isMuted() { return isMuted; }
         public void setMuted(boolean muted) { this.isMuted = muted; }
         
+        public double getScale() { return scale; }
+        public void setScale(double scale) { this.scale = scale; }
+        public double getPosX() { return posX; }
+        public void setPosX(double posX) { this.posX = posX; }
+        public double getPosY() { return posY; }
+        public void setPosY(double posY) { this.posY = posY; }
         public String getTextContent() { return textContent; }
         public void setTextContent(String t) { this.textContent = t; this.aliasName = t; }
         public String getTextColor() { return textColor; }
@@ -188,9 +207,9 @@ public class MainWorkhorse {
 
         tracks.add(new TimelineTrack("T1", TrackType.TEXT));
         tracks.add(new TimelineTrack("V1", TrackType.VIDEO));
+        tracks.add(new TimelineTrack("V2", TrackType.VIDEO));
         tracks.add(new TimelineTrack("A1", TrackType.AUDIO));
         tracks.add(new TimelineTrack("A2", TrackType.AUDIO));
-        tracks.add(new TimelineTrack("A3", TrackType.AUDIO));
         
         timelinePane.setTracks(tracks);
         timelinePane.setPlayheadTime(0.0);
@@ -252,6 +271,46 @@ public class MainWorkhorse {
                 opacityValueLabel.setText((int)(newV.doubleValue() * 100) + "%");
                 if (clip == activeTimelineClip) {
                     mediaView.setOpacity(newV.doubleValue());
+                } else if (clip == activeTimelineClipV2) {
+                    mediaViewV2.setOpacity(newV.doubleValue());
+                }
+            }
+        });
+        scaleSlider.valueProperty().addListener((obs, oldV, newV) -> {
+            TimelineClip clip = timelinePane.getSelectedClip();
+            if (clip != null) {
+                clip.setScale(newV.doubleValue());
+                scaleValueLabel.setText(String.format("%.2fx", newV.doubleValue()));
+                if (clip == activeTimelineClipV2) {
+                    mediaViewV2.setScaleX(newV.doubleValue());
+                    mediaViewV2.setScaleY(newV.doubleValue());
+                } else if (clip == activeTimelineClip) {
+                    mediaView.setScaleX(newV.doubleValue());
+                    mediaView.setScaleY(newV.doubleValue());
+                }
+            }
+        });
+        posXSlider.valueProperty().addListener((obs, oldV, newV) -> {
+            TimelineClip clip = timelinePane.getSelectedClip();
+            if (clip != null) {
+                clip.setPosX(newV.doubleValue());
+                posXValueLabel.setText(String.format("%.0f", newV.doubleValue()));
+                if (clip == activeTimelineClipV2) {
+                    mediaViewV2.setTranslateX(newV.doubleValue());
+                } else if (clip == activeTimelineClip) {
+                    mediaView.setTranslateX(newV.doubleValue());
+                }
+            }
+        });
+        posYSlider.valueProperty().addListener((obs, oldV, newV) -> {
+            TimelineClip clip = timelinePane.getSelectedClip();
+            if (clip != null) {
+                clip.setPosY(newV.doubleValue());
+                posYValueLabel.setText(String.format("%.0f", newV.doubleValue()));
+                if (clip == activeTimelineClipV2) {
+                    mediaViewV2.setTranslateY(newV.doubleValue());
+                } else if (clip == activeTimelineClip) {
+                    mediaView.setTranslateY(newV.doubleValue());
                 }
             }
         });
@@ -365,9 +424,9 @@ public class MainWorkhorse {
         ContextMenu poolMenu = new ContextMenu();
         MenuItem playPreview = new MenuItem("> Play Preview");
         MenuItem addToV1 = new MenuItem("+ Add to V1 (Video)");
+        MenuItem addToV2 = new MenuItem("+ Add to V2 (Video PiP)");
         MenuItem addToA1 = new MenuItem("+ Add to A1 (Audio 1)");
         MenuItem addToA2 = new MenuItem("+ Add to A2 (Audio 2)");
-        MenuItem addToA3 = new MenuItem("+ Add to A3 (Audio 3)");
         MenuItem removeFile = new MenuItem("X Remove from Pool");
         
         playPreview.setOnAction(e -> {
@@ -379,6 +438,10 @@ public class MainWorkhorse {
             MediaItem selected = mediaListView.getSelectionModel().getSelectedItem();
             if (selected != null) addToTrackByType(selected, TrackType.VIDEO, 0);
         });
+        addToV2.setOnAction(e -> {
+            MediaItem selected = mediaListView.getSelectionModel().getSelectedItem();
+            if (selected != null) addToTrackByType(selected, TrackType.VIDEO, 1);
+        });
         addToA1.setOnAction(e -> {
             MediaItem selected = mediaListView.getSelectionModel().getSelectedItem();
             if (selected != null) addToTrackByType(selected, TrackType.AUDIO, 0);
@@ -386,10 +449,6 @@ public class MainWorkhorse {
         addToA2.setOnAction(e -> {
             MediaItem selected = mediaListView.getSelectionModel().getSelectedItem();
             if (selected != null) addToTrackByType(selected, TrackType.AUDIO, 1);
-        });
-        addToA3.setOnAction(e -> {
-            MediaItem selected = mediaListView.getSelectionModel().getSelectedItem();
-            if (selected != null) addToTrackByType(selected, TrackType.AUDIO, 2);
         });
         
         removeFile.setOnAction(e -> {
@@ -405,7 +464,7 @@ public class MainWorkhorse {
             if (selected != null) openInFileManager(selected.getFile());
         });
 
-        poolMenu.getItems().addAll(playPreview, addToV1, addToA1, addToA2, addToA3, new SeparatorMenuItem(), showInFM, new SeparatorMenuItem(), removeFile);
+        poolMenu.getItems().addAll(playPreview, addToV1, addToV2, addToA1, addToA2, new SeparatorMenuItem(), showInFM, new SeparatorMenuItem(), removeFile);
         mediaListView.setContextMenu(poolMenu);
 
         mediaListView.setOnDragDetected(event -> {
@@ -505,6 +564,19 @@ public class MainWorkhorse {
                 opacitySlider.setDisable(false);
                 opacitySlider.setValue(clip.getOpacity());
                 opacityValueLabel.setText((int)(clip.getOpacity() * 100) + "%");
+                
+                scaleSlider.setDisable(false);
+                scaleSlider.setValue(clip.getScale());
+                scaleValueLabel.setText(String.format("%.2fx", clip.getScale()));
+                
+                posXSlider.setDisable(false);
+                posXSlider.setValue(clip.getPosX());
+                posXValueLabel.setText(String.format("%.0f", clip.getPosX()));
+                
+                posYSlider.setDisable(false);
+                posYSlider.setValue(clip.getPosY());
+                posYValueLabel.setText(String.format("%.0f", clip.getPosY()));
+                
                 btnResetClipProps.setDisable(false);
             }
         }
@@ -517,10 +589,20 @@ public class MainWorkhorse {
         clip.setAliasName(null);
         clip.setPlaybackSpeed(1.0);
         clip.setOpacity(1.0);
+        clip.setScale(1.0);
+        clip.setPosX(0.0);
+        clip.setPosY(0.0);
         updateInspector(clip);
         if (clip == activeTimelineClip && currentMediaPlayer != null) {
             currentMediaPlayer.setRate(1.0);
             mediaView.setOpacity(1.0);
+            mediaView.setScaleX(1.0); mediaView.setScaleY(1.0);
+            mediaView.setTranslateX(0.0); mediaView.setTranslateY(0.0);
+        } else if (clip == activeTimelineClipV2 && currentPlayerV2 != null) {
+            currentPlayerV2.setRate(1.0);
+            mediaViewV2.setOpacity(1.0);
+            mediaViewV2.setScaleX(1.0); mediaViewV2.setScaleY(1.0);
+            mediaViewV2.setTranslateX(0.0); mediaViewV2.setTranslateY(0.0);
         }
         timelinePane.redraw();
     }
@@ -726,10 +808,14 @@ public class MainWorkhorse {
         isPlayingTimeline = false;
         globalPlayheadTime = 0.0;
         activeTimelineClip = null;
+        activeTimelineClipV2 = null;
         activeAudioClips.clear();
         timelinePane.setPlayheadTime(0.0);
         if (currentMediaPlayer != null) {
             currentMediaPlayer.stop();
+        }
+        if (currentPlayerV2 != null) {
+            currentPlayerV2.stop();
         }
         for (MediaPlayer ap : audioPlayers.values()) {
             if (ap != null) ap.stop();
@@ -759,9 +845,8 @@ public class MainWorkhorse {
         }
 
         TimelineClip clipUnderPlayhead = null;
-        int videoTrackIndex = tracks.size() > 1 && tracks.get(1).getType() == TrackType.VIDEO ? 1 : 0;
-        if (!tracks.isEmpty() && tracks.get(videoTrackIndex).getType() == TrackType.VIDEO) {
-            for (TimelineClip clip : tracks.get(videoTrackIndex).getClips()) {
+        if (tracks.size() > 1 && tracks.get(1).getType() == TrackType.VIDEO) {
+            for (TimelineClip clip : tracks.get(1).getClips()) {
                 if (globalTime >= clip.getStartSeconds() && globalTime < clip.getStartSeconds() + clip.getDurationSeconds()) {
                     clipUnderPlayhead = clip;
                     break;
@@ -800,8 +885,43 @@ public class MainWorkhorse {
                 currentMediaPlayer.seek(javafx.util.Duration.seconds(activeTimelineClip.getMediaStartOffset() + localTime));
             }
         }
+        
+        // V2 Evaluation
+        TimelineClip clipUnderPlayheadV2 = null;
+        if (tracks.size() > 2 && tracks.get(2).getType() == TrackType.VIDEO) {
+            for (TimelineClip clip : tracks.get(2).getClips()) {
+                if (globalTime >= clip.getStartSeconds() && globalTime < clip.getStartSeconds() + clip.getDurationSeconds()) {
+                    clipUnderPlayheadV2 = clip;
+                    break;
+                }
+            }
+        }
+        if (clipUnderPlayheadV2 != activeTimelineClipV2) {
+            activeTimelineClipV2 = clipUnderPlayheadV2;
+            if (activeTimelineClipV2 != null) {
+                loadAndPlayTimelineClipV2(activeTimelineClipV2, globalTime);
+                Platform.runLater(() -> updateInspector(activeTimelineClipV2));
+            } else {
+                if (currentPlayerV2 != null) {
+                    currentPlayerV2.stop();
+                    mediaViewV2.setMediaPlayer(null);
+                }
+                mediaViewV2.setVisible(false);
+                if (activeTimelineClip != null) {
+                    Platform.runLater(() -> updateInspector(activeTimelineClip));
+                }
+            }
+        } else if (activeTimelineClipV2 != null && currentPlayerV2 != null) {
+            if (isPlayingTimeline) {
+                if (currentPlayerV2.getStatus() != MediaPlayer.Status.PLAYING) currentPlayerV2.play();
+            } else {
+                double localTime = globalTime - activeTimelineClipV2.getStartSeconds();
+                currentPlayerV2.seek(javafx.util.Duration.seconds(activeTimelineClipV2.getMediaStartOffset() + localTime));
+            }
+        }
 
-        for (int trackIdx = 1; trackIdx < tracks.size(); trackIdx++) {
+        for (int trackIdx = 0; trackIdx < tracks.size(); trackIdx++) {
+            if (tracks.get(trackIdx).getType() != TrackType.AUDIO) continue;
             TimelineClip audioClipUnderPlayhead = null;
             for (TimelineClip clip : tracks.get(trackIdx).getClips()) {
                 if (globalTime >= clip.getStartSeconds() && globalTime < clip.getStartSeconds() + clip.getDurationSeconds()) {
@@ -846,6 +966,31 @@ public class MainWorkhorse {
         }
     }
     
+    private void loadAndPlayTimelineClipV2(TimelineClip clip, double globalTime) {
+        if (currentPlayerV2 != null) {
+            currentPlayerV2.stop();
+            currentPlayerV2.dispose();
+        }
+        Media media = new Media(clip.getMediaItem().getFile().toURI().toString());
+        currentPlayerV2 = new MediaPlayer(media);
+        mediaViewV2.setMediaPlayer(currentPlayerV2);
+        mediaViewV2.setVisible(true);
+
+        currentPlayerV2.setVolume((isMuted || clip.isMuted()) ? 0 : volumeSlider.getValue());
+        
+        currentPlayerV2.setOnReady(() -> {
+            double localTime = globalTime - clip.getStartSeconds();
+            currentPlayerV2.seek(javafx.util.Duration.seconds(clip.getMediaStartOffset() + localTime));
+            currentPlayerV2.setRate(clip.getPlaybackSpeed());
+            mediaViewV2.setOpacity(clip.getOpacity());
+            mediaViewV2.setScaleX(clip.getScale());
+            mediaViewV2.setScaleY(clip.getScale());
+            mediaViewV2.setTranslateX(clip.getPosX());
+            mediaViewV2.setTranslateY(clip.getPosY());
+            if (isPlayingTimeline) currentPlayerV2.play();
+        });
+    }
+
     private void loadAndPlayTimelineClip(TimelineClip clip, double globalTime) {
         if (currentMediaPlayer != null) {
             currentMediaPlayer.stop();

@@ -33,6 +33,7 @@
 
             <ToolBar>
                 <Button fx:id="btnImport" text="+ Import" onAction="#handleImportAction" style="-fx-text-fill: #2aa198; -fx-font-size: 14px; -fx-font-weight: bold;"/>
+                <Button fx:id="btnAddText" text="T Add Text" onAction="#handleAddTextAction" style="-fx-text-fill: #b58900; -fx-font-size: 14px; -fx-font-weight: bold;"/>
                 <Separator/>
                 <Label text="Tools:" style="-fx-padding: 0 5 0 5;"/>
                 <ToggleButton fx:id="btnSelectTool" text="Select (V)" selected="true"/>
@@ -71,7 +72,9 @@
                 <center>
                     <StackPane>
                         <MediaView fx:id="mediaView" fitWidth="640" fitHeight="360" preserveRatio="true"/>
+                        <MediaView fx:id="mediaViewV2" fitWidth="640" fitHeight="360" preserveRatio="true"/>
                         <javafx.scene.image.ImageView fx:id="audioThumbnailView" fitWidth="300" fitHeight="300" preserveRatio="true" visible="false"/>
+                        <Label fx:id="previewTextOverlay" text="" visible="false" style="-fx-font-size: 48px; -fx-text-fill: white; -fx-effect: dropshadow(gaussian, black, 2, 1.0, 0, 0);"/>
                         <Label fx:id="noVideoLabel" text="Select a clip and press Play" style="-fx-text-fill: #888; -fx-font-size: 16px;"/>
                     </StackPane>
                 </center>
@@ -104,17 +107,51 @@
                     <Label fx:id="lblClipDuration" text="Duration: --"/>
                     <Label fx:id="lblClipExt" text="Type: --"/>
                     
-                    <Label text="Playback Speed:" style="-fx-padding: 10 0 0 0;"/>
-                    <HBox spacing="10" alignment="CENTER_LEFT">
-                        <Slider fx:id="speedSlider" min="0.25" max="4.0" value="1.0" HBox.hgrow="ALWAYS"/>
-                        <Label fx:id="speedValueLabel" text="1.0x" minWidth="35"/>
-                    </HBox>
-                    
-                    <Label text="Opacity:"/>
-                    <HBox spacing="10" alignment="CENTER_LEFT">
-                        <Slider fx:id="opacitySlider" min="0.0" max="1.0" value="1.0" HBox.hgrow="ALWAYS"/>
-                        <Label fx:id="opacityValueLabel" text="100%" minWidth="35"/>
-                    </HBox>
+                    <VBox fx:id="textPropertiesBox" spacing="5" visible="false" managed="false">
+                        <Label text="Text Content:" style="-fx-padding: 5 0 0 0;"/>
+                        <TextField fx:id="txtTextContent"/>
+                        <HBox alignment="CENTER_LEFT" spacing="5">
+                            <Label text="Color:"/>
+                            <ColorPicker fx:id="textColorPicker"/>
+                        </HBox>
+                        <Label text="Font Size:"/>
+                        <HBox alignment="CENTER_LEFT" spacing="5">
+                            <Slider fx:id="fontSizeSlider" min="12" max="144" value="48" HBox.hgrow="ALWAYS"/>
+                            <Label fx:id="fontSizeLabel" text="48"/>
+                        </HBox>
+                    </VBox>
+
+                    <VBox fx:id="videoPropertiesBox" spacing="5">
+                        <Label text="Playback Speed:" style="-fx-padding: 10 0 0 0;"/>
+                        <HBox spacing="10" alignment="CENTER_LEFT">
+                            <Slider fx:id="speedSlider" min="0.25" max="4.0" value="1.0" HBox.hgrow="ALWAYS"/>
+                            <Label fx:id="speedValueLabel" text="1.0x" minWidth="35"/>
+                        </HBox>
+                        
+                        <Label text="Opacity:"/>
+                        <HBox spacing="10" alignment="CENTER_LEFT">
+                            <Slider fx:id="opacitySlider" min="0.0" max="1.0" value="1.0" HBox.hgrow="ALWAYS"/>
+                            <Label fx:id="opacityValueLabel" text="100%" minWidth="35"/>
+                        </HBox>
+                        
+                        <Label text="Scale (PiP):"/>
+                        <HBox spacing="10" alignment="CENTER_LEFT">
+                            <Slider fx:id="scaleSlider" min="0.1" max="3.0" value="1.0" HBox.hgrow="ALWAYS"/>
+                            <Label fx:id="scaleValueLabel" text="1.0x" minWidth="35"/>
+                        </HBox>
+
+                        <Label text="Position X:"/>
+                        <HBox spacing="10" alignment="CENTER_LEFT">
+                            <Slider fx:id="posXSlider" min="-640" max="640" value="0.0" HBox.hgrow="ALWAYS"/>
+                            <Label fx:id="posXValueLabel" text="0" minWidth="35"/>
+                        </HBox>
+
+                        <Label text="Position Y:"/>
+                        <HBox spacing="10" alignment="CENTER_LEFT">
+                            <Slider fx:id="posYSlider" min="-360" max="360" value="0.0" HBox.hgrow="ALWAYS"/>
+                            <Label fx:id="posYValueLabel" text="0" minWidth="35"/>
+                        </HBox>
+                    </VBox>
                     <Button fx:id="btnResetClipProps" text="Reset Properties" onAction="#resetClipProperties"
                             style="-fx-background-color: #586e75 -fx-text-fill: #2aa198; -fx-border-color: #2aa198; -fx-border-width: 1; -fx-border-radius: 4; -fx-font-weight: bold;"
                             maxWidth="Infinity" disable="true"/>
