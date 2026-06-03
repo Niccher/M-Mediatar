@@ -39,7 +39,7 @@ public class Exporter {
                     MainWorkhorse.TimelineTrack track = tracks.get(i);
                     if (track != null && !track.getClips().isEmpty()) {
                         String prefix = "track_" + i;
-                        File aMaster = processAudioTrack(track, tempDir, prefix, config);
+                        File aMaster = processAudioTrack(track, tempDir, prefix, config, audioThumbnail);
                         if (aMaster != null && aMaster.exists()) {
                             audioMasters.add(aMaster);
                         }
@@ -49,6 +49,7 @@ public class Exporter {
                 // Phase 4: Final Mixdown
                 List<String> mixCmd = new ArrayList<>();
                 mixCmd.add("ffmpeg");
+                mixCmd.add("-hide_banner");
                 mixCmd.add("-y");
 
                 if (v1Master != null) {
@@ -74,14 +75,24 @@ public class Exporter {
                     audioLabels.add("[" + inputIdx + ":a]");
                 }
 
+                // Index of first audio master input (0 if no v1, 1 if v1 present)
+                int firstAudioIdx = (v1Master != null) ? 1 : 0;
+                boolean hasVideoOutput = !config.isAudioOnlyFormat()
+                        && (v1Master != null || !audioMasters.isEmpty());
+
                 if (audioLabels.size() > 1) {
                     // Multiple audio sources — mix them with amix
                     StringBuilder filterComplex = new StringBuilder();
                     for (String label : audioLabels) filterComplex.append(label);
                     filterComplex.append("amix=inputs=").append(audioLabels.size())
-                                 .append(":duration=first:dropout_transition=3[aout]");
+                                 .append(":duration=longest:dropout_transition=3[aout]");
                     mixCmd.add("-filter_complex"); mixCmd.add(filterComplex.toString());
-                    if (v1Master != null) { mixCmd.add("-map"); mixCmd.add("0:v"); }
+                    if (v1Master != null) {
+                        mixCmd.add("-map"); mixCmd.add("0:v");
+                    } else if (hasVideoOutput) {
+                        // Use thumbnail video from first audio master
+                        mixCmd.add("-map"); mixCmd.add(firstAudioIdx + ":v");
+                    }
                     mixCmd.add("-map"); mixCmd.add("[aout]");
                 } else if (audioLabels.size() == 1) {
                     // Single audio source — map it directly
@@ -89,7 +100,9 @@ public class Exporter {
                         mixCmd.add("-map"); mixCmd.add("0:v");
                         mixCmd.add("-map"); mixCmd.add("0:a?");
                     } else {
-                        mixCmd.add("-map"); mixCmd.add("0:a");
+                        // Single audio master (now .mp4 with thumbnail video)
+                        if (hasVideoOutput) { mixCmd.add("-map"); mixCmd.add(firstAudioIdx + ":v"); }
+                        mixCmd.add("-map"); mixCmd.add(firstAudioIdx + ":a");
                     }
                 } else {
                     // No audio at all — map video only
@@ -97,7 +110,7 @@ public class Exporter {
                 }
 
                 // Codec settings
-                if (v1Master != null && !config.isAudioOnlyFormat()) {
+                if (hasVideoOutput) {
                     mixCmd.add("-c:v"); mixCmd.add("copy");
                 }
                 mixCmd.add("-c:a"); mixCmd.add(config.getAudioCodec());
@@ -164,8 +177,10 @@ public class Exporter {
     }
 
     // ─── Audio Track Processing ────────────────────────────────────────────────
+    // Audio tracks now produce .mp4 with the thumbnail image as video so the
+    // thumbnail shows in the final output whenever only audio is playing.
     private static File processAudioTrack(MainWorkhorse.TimelineTrack track, File tempDir,
-                                          String prefix, ExportConfig config) throws Exception {
+                                          String prefix, ExportConfig config, File audioThumbnail) throws Exception {
         config.getCallback().onLog("\n── Processing Audio Track: " + prefix.toUpperCase() + " ──");
         List<MainWorkhorse.TimelineClip> clips = new ArrayList<>(track.getClips());
         clips.sort(Comparator.comparingDouble(c -> c.getStartSeconds()));
@@ -179,13 +194,13 @@ public class Exporter {
         for (MainWorkhorse.TimelineClip clip : clips) {
             if (clip.getStartSeconds() > currentTime + 0.001) {
                 double gapDuration = clip.getStartSeconds() - currentTime;
-                config.getCallback().onLog("  🔇 Generating " + String.format("%.2f", gapDuration) + "s silence...");
-                File silenceFile = generateSilence(tempDir, prefix + "_silence_" + clipIdx, gapDuration, config);
-                writer.println("file '" + silenceFile.getAbsolutePath() + "'");
+                config.getCallback().onLog("  🔇 Generating " + String.format("%.2f", gapDuration) + "s thumbnail gap...");
+                File gapFile = generateAudioBackgroundVideo(tempDir, prefix + "_gap_" + clipIdx, gapDuration, config, audioThumbnail);
+                writer.println("file '" + gapFile.getAbsolutePath() + "'");
             }
 
             config.getCallback().onLog("  🔊 Rendering audio: " + clip.getAliasName());
-            File processedClip = processAudioClip(clip, tempDir, prefix + "_clip_" + clipIdx, config);
+            File processedClip = processAudioAsVideoClip(clip, tempDir, prefix + "_clip_" + clipIdx, config, audioThumbnail);
             writer.println("file '" + processedClip.getAbsolutePath() + "'");
 
             currentTime = clip.getStartSeconds() + (clip.getDurationSeconds() / clip.getPlaybackSpeed());
@@ -193,8 +208,8 @@ public class Exporter {
         }
         writer.close();
 
-        File masterFile = new File(tempDir, prefix + "_master.m4a");
-        config.getCallback().onLog("  📎 Concatenating audio segments...");
+        File masterFile = new File(tempDir, prefix + "_master.mp4");
+        config.getCallback().onLog("  📎 Concatenating audio track segments...");
         List<String> cmd = buildConcatCmd(concatList, masterFile);
         runProcess(cmd, config);
         return masterFile;
@@ -207,18 +222,28 @@ public class Exporter {
         double speed = clip.getPlaybackSpeed();
         String res = config.getResolution().replace("x", ":");
 
+        // Probe once so we can build the correct filter_complex ("[0:a?]" is invalid inside filtergraphs)
+        boolean srcHasAudio = hasAudioStream(clip.getMediaItem().getFile());
+
         List<String> cmd = new ArrayList<>();
-        cmd.add("ffmpeg"); cmd.add("-y");
+        cmd.add("ffmpeg"); cmd.add("-hide_banner"); cmd.add("-y");
         cmd.add("-ss"); cmd.add(String.valueOf(clip.getMediaStartOffset()));
         cmd.add("-t"); cmd.add(String.valueOf(clip.getDurationSeconds()));
         cmd.add("-i"); cmd.add(clip.getMediaItem().getFile().getAbsolutePath());
+        // Always add a silent fallback as input [1] for clips without audio
+        cmd.add("-f"); cmd.add("lavfi");
+        cmd.add("-i"); cmd.add("anullsrc=r=48000:cl=stereo");
 
-        String vFilter = "scale=" + res + ":force_original_aspect_ratio=decrease,pad=" + res + ":(ow-iw)/2:(oh-ih)/2,fps=" + config.getFramerate();
+        String vFilter = "scale=" + res + ":force_original_aspect_ratio=decrease,pad=" + res + ":(ow-iw)/2:(oh-ih)/2,fps=" + config.getFramerate() + ",format=yuv420p";
         if (speed != 1.0) vFilter += ",setpts=" + (1.0 / speed) + "*PTS";
 
         String aFilter = "atempo=" + clampAtempo(speed) + ",aformat=sample_rates=48000:channel_layouts=stereo";
+        // Use real audio if present, else fall back to silent anullsrc [1:a]
+        String filterComplex = srcHasAudio
+                ? "[0:v]" + vFilter + "[v];[0:a]" + aFilter + "[a]"
+                : "[0:v]" + vFilter + "[v];[1:a]aformat=sample_rates=48000:channel_layouts=stereo[a]";
 
-        cmd.add("-filter_complex"); cmd.add("[0:v]" + vFilter + "[v];[0:a]" + aFilter + "[a]");
+        cmd.add("-filter_complex"); cmd.add(filterComplex);
         cmd.add("-map"); cmd.add("[v]");
         cmd.add("-map"); cmd.add("[a]");
         cmd.add("-c:v"); cmd.add(config.getVideoCodec());
@@ -237,7 +262,7 @@ public class Exporter {
         String res = config.getResolution().replace("x", ":");
 
         List<String> cmd = new ArrayList<>();
-        cmd.add("ffmpeg"); cmd.add("-y");
+        cmd.add("ffmpeg"); cmd.add("-hide_banner"); cmd.add("-y");
         // Loop the thumbnail image as video source
         cmd.add("-loop"); cmd.add("1");
         cmd.add("-framerate"); cmd.add(String.valueOf(config.getFramerate()));
@@ -252,7 +277,7 @@ public class Exporter {
         cmd.add("-t"); cmd.add(String.valueOf(clip.getDurationSeconds()));
         cmd.add("-i"); cmd.add(clip.getMediaItem().getFile().getAbsolutePath());
 
-        String vFilter = "scale=" + res + ":force_original_aspect_ratio=decrease,pad=" + res + ":(ow-iw)/2:(oh-ih)/2,fps=" + config.getFramerate();
+        String vFilter = "scale=" + res + ":force_original_aspect_ratio=decrease,pad=" + res + ":(ow-iw)/2:(oh-ih)/2,fps=" + config.getFramerate() + ",format=yuv420p";
         double speed = clip.getPlaybackSpeed();
         String aFilter = "atempo=" + clampAtempo(speed) + ",aformat=sample_rates=48000:channel_layouts=stereo";
 
@@ -261,6 +286,7 @@ public class Exporter {
         cmd.add("-map"); cmd.add("[a]");
         cmd.add("-t"); cmd.add(String.valueOf(clip.getDurationSeconds()));
         cmd.add("-c:v"); cmd.add(config.getVideoCodec());
+        cmd.add("-b:v"); cmd.add(config.getVideoBitrate());
         cmd.add("-preset"); cmd.add("fast");
         cmd.add("-c:a"); cmd.add("aac");
         cmd.add("-b:a"); cmd.add(config.getAudioBitrate());
@@ -274,7 +300,7 @@ public class Exporter {
         File out = new File(tempDir, name + ".m4a");
         double speed = clip.getPlaybackSpeed();
         List<String> cmd = new ArrayList<>();
-        cmd.add("ffmpeg"); cmd.add("-y");
+        cmd.add("ffmpeg"); cmd.add("-hide_banner"); cmd.add("-y");
         cmd.add("-ss"); cmd.add(String.valueOf(clip.getMediaStartOffset()));
         cmd.add("-t"); cmd.add(String.valueOf(clip.getDurationSeconds()));
         cmd.add("-i"); cmd.add(clip.getMediaItem().getFile().getAbsolutePath());
@@ -290,7 +316,7 @@ public class Exporter {
     private static File generateBlankVideo(File tempDir, String name, double duration, ExportConfig config) throws Exception {
         File out = new File(tempDir, name + ".mp4");
         List<String> cmd = new ArrayList<>();
-        cmd.add("ffmpeg"); cmd.add("-y");
+        cmd.add("ffmpeg"); cmd.add("-hide_banner"); cmd.add("-y");
         cmd.add("-f"); cmd.add("lavfi");
         cmd.add("-i"); cmd.add("color=c=black:s=" + config.getResolution() + ":r=" + config.getFramerate());
         cmd.add("-f"); cmd.add("lavfi");
@@ -307,7 +333,7 @@ public class Exporter {
     private static File generateSilence(File tempDir, String name, double duration, ExportConfig config) throws Exception {
         File out = new File(tempDir, name + ".m4a");
         List<String> cmd = new ArrayList<>();
-        cmd.add("ffmpeg"); cmd.add("-y");
+        cmd.add("ffmpeg"); cmd.add("-hide_banner"); cmd.add("-y");
         cmd.add("-f"); cmd.add("lavfi");
         cmd.add("-i"); cmd.add("anullsrc=r=48000:cl=stereo");
         cmd.add("-t"); cmd.add(String.valueOf(duration));
@@ -317,16 +343,71 @@ public class Exporter {
         return out;
     }
 
+    /** Generates a video segment using the audio thumbnail image (or dark fallback) with silent audio.
+     *  Used to fill gaps between clips on audio tracks so all segments are .mp4 for concat. */
+    private static File generateAudioBackgroundVideo(File tempDir, String name, double duration,
+                                                     ExportConfig config, File thumbnail) throws Exception {
+        File out = new File(tempDir, name + ".mp4");
+        String res = config.getResolution().replace("x", ":");
+        List<String> cmd = new ArrayList<>();
+        cmd.add("ffmpeg"); cmd.add("-hide_banner"); cmd.add("-y");
+        cmd.add("-loop"); cmd.add("1");
+        cmd.add("-framerate"); cmd.add(String.valueOf(config.getFramerate()));
+        if (thumbnail != null && thumbnail.exists()) {
+            cmd.add("-i"); cmd.add(thumbnail.getAbsolutePath());
+        } else {
+            cmd.add("-f"); cmd.add("lavfi");
+            cmd.add("-i"); cmd.add("color=c=#1a1a2e:s=" + config.getResolution() + ":r=" + config.getFramerate());
+        }
+        cmd.add("-f"); cmd.add("lavfi");
+        cmd.add("-i"); cmd.add("anullsrc=r=48000:cl=stereo");
+        String vFilter = "scale=" + res + ":force_original_aspect_ratio=decrease,pad=" + res
+                + ":(ow-iw)/2:(oh-ih)/2,fps=" + config.getFramerate() + ",format=yuv420p";
+        cmd.add("-filter_complex");
+        cmd.add("[0:v]" + vFilter + "[v];[1:a]aformat=sample_rates=48000:channel_layouts=stereo[a]");
+        cmd.add("-map"); cmd.add("[v]");
+        cmd.add("-map"); cmd.add("[a]");
+        cmd.add("-t"); cmd.add(String.valueOf(duration));
+        cmd.add("-c:v"); cmd.add(config.getVideoCodec());
+        cmd.add("-b:v"); cmd.add(config.getVideoBitrate());
+        cmd.add("-preset"); cmd.add("fast");
+        cmd.add("-c:a"); cmd.add("aac");
+        cmd.add("-b:a"); cmd.add(config.getAudioBitrate());
+        cmd.add(out.getAbsolutePath());
+        runProcess(cmd, config);
+        return out;
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
     private static List<String> buildConcatCmd(File concatList, File masterFile) {
         List<String> cmd = new ArrayList<>();
-        cmd.add("ffmpeg"); cmd.add("-y");
+        cmd.add("ffmpeg"); cmd.add("-hide_banner"); cmd.add("-y");
         cmd.add("-f"); cmd.add("concat");
         cmd.add("-safe"); cmd.add("0");
         cmd.add("-i"); cmd.add(concatList.getAbsolutePath());
         cmd.add("-c"); cmd.add("copy");
         cmd.add(masterFile.getAbsolutePath());
         return cmd;
+    }
+
+    /** Returns true if the given file contains at least one audio stream. */
+    private static boolean hasAudioStream(File file) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder(
+                "ffprobe", "-hide_banner", "-loglevel", "error",
+                "-select_streams", "a",
+                "-show_entries", "stream=codec_type",
+                "-of", "default=noprint_wrappers=1",
+                file.getAbsolutePath()
+            );
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            String output = new String(p.getInputStream().readAllBytes()).trim();
+            p.waitFor();
+            return !output.isEmpty();
+        } catch (Exception e) {
+            return false; // assume no audio if probe fails
+        }
     }
 
     private static boolean isAudioOnlyFile(String filename) {
@@ -344,9 +425,27 @@ public class Exporter {
 
     private static File getAudioThumbnailPath() {
         try {
-            URL url = Exporter.class.getResource("/com/nicch/mediatar/audio_thumbnail.png");
-            if (url != null) return new File(url.toURI());
-        } catch (Exception ignored) {}
+            File hardcoded = new File("/home/domino/NetBeansProjects/Mediatar/src/main/resources/com/nicch/mediatar/audio_thumbnail.png");
+            if (hardcoded.exists()) {
+                return hardcoded;
+            }
+            java.io.InputStream is = Exporter.class.getResourceAsStream("/com/nicch/mediatar/audio_thumbnail.png");
+            if (is != null) {
+                File temp = File.createTempFile("audio_thumbnail", ".png");
+                temp.deleteOnExit();
+                try (java.io.FileOutputStream fos = new java.io.FileOutputStream(temp)) {
+                    byte[] buffer = new byte[1024];
+                    int bytesRead;
+                    while ((bytesRead = is.read(buffer)) != -1) {
+                        fos.write(buffer, 0, bytesRead);
+                    }
+                }
+                is.close();
+                return temp;
+            }
+        } catch (Exception ignored) {
+            ignored.printStackTrace();
+        }
         return null;
     }
 
