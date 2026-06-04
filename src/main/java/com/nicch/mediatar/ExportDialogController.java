@@ -94,15 +94,12 @@ public class ExportDialogController {
         
         // Auto-select audio format if the timeline only contains audio clips
         if (tracks != null && !tracks.isEmpty()) {
-            boolean hasVideo = !tracks.get(0).getClips().isEmpty();
-            boolean hasAudio = false;
-            
-            for (int i = 1; i < tracks.size(); i++) {
-                if (!tracks.get(i).getClips().isEmpty()) {
-                    hasAudio = true;
-                    break;
-                }
-            }
+            boolean hasVideo = tracks.stream()
+                .filter(t -> t.getType() == MainWorkhorse.TrackType.VIDEO)
+                .anyMatch(t -> !t.getClips().isEmpty());
+            boolean hasAudio = tracks.stream()
+                .filter(t -> t.getType() == MainWorkhorse.TrackType.AUDIO)
+                .anyMatch(t -> !t.getClips().isEmpty());
             
             if (!hasVideo && hasAudio) {
                 cbFormat.setValue(".mp3");
