@@ -18,6 +18,7 @@ public class Exporter {
 
     public static void exportTimeline(List<MainWorkhorse.TimelineTrack> tracks, ExportConfig config) {
         new Thread(() -> {
+            long startTime = System.currentTimeMillis();
             try {
                 File tempDir = Files.createTempDirectory("mediatar_export").toFile();
                 File audioThumbnail = getAudioThumbnailPath();
@@ -25,22 +26,13 @@ public class Exporter {
                 boolean audioOnlyOutput = config.isAudioOnlyFormat();
                 File v1Master = null;
 
-                // Phase 1: Merge V1 and V2 into one unified video track (sorted by start time)
-                // V2 clips are treated identically to V1 — same pipeline, full size.
+                // Phase 1: Process V1 as the primary video track
                 List<MainWorkhorse.TimelineTrack> videoTracks = tracks.stream().filter(t -> t.getType() == MainWorkhorse.TrackType.VIDEO).collect(java.util.stream.Collectors.toList());
                 MainWorkhorse.TimelineTrack v1 = videoTracks.size() > 0 ? videoTracks.get(0) : null;
                 MainWorkhorse.TimelineTrack v2 = videoTracks.size() > 1 ? videoTracks.get(1) : null;
-                
-                List<MainWorkhorse.TimelineClip> mergedVideoClips = new ArrayList<>();
-                if (v1 != null) mergedVideoClips.addAll(v1.getClips());
-                if (v2 != null) mergedVideoClips.addAll(v2.getClips());
-                mergedVideoClips.sort(java.util.Comparator.comparingDouble(MainWorkhorse.TimelineClip::getStartSeconds));
 
-                if (!audioOnlyOutput && !mergedVideoClips.isEmpty()) {
-                    // Build a synthetic track with the merged clips
-                    MainWorkhorse.TimelineTrack mergedTrack = new MainWorkhorse.TimelineTrack("V_MERGED", MainWorkhorse.TrackType.VIDEO);
-                    mergedTrack.getClips().addAll(mergedVideoClips);
-                    v1Master = processVideoTrack(mergedTrack, tempDir, "v_merged", config, audioThumbnail);
+                if (!audioOnlyOutput && v1 != null && !v1.getClips().isEmpty()) {
+                    v1Master = processVideoTrack(v1, tempDir, "v1", config, audioThumbnail);
                 }
 
                 // Gather all audio tracks (A1/A2)
@@ -53,6 +45,14 @@ public class Exporter {
                         if (aMaster != null && aMaster.exists()) {
                             audioMasters.add(aMaster);
                         }
+                    }
+                }
+                
+                // Extract audio from V2 clips so they mix correctly in the final output
+                if (v2 != null && !v2.getClips().isEmpty()) {
+                    File v2AudioMaster = processAudioTrack(v2, tempDir, "v2_audio", config, audioThumbnail);
+                    if (v2AudioMaster != null && v2AudioMaster.exists()) {
+                        audioMasters.add(v2AudioMaster);
                     }
                 }
 
@@ -122,15 +122,16 @@ public class Exporter {
                 mixCmd.add("-c:a"); mixCmd.add(config.getAudioCodec());
                 mixCmd.add("-b:a"); mixCmd.add(config.getAudioBitrate());
 
-                File mixOut = (hasText && hasVideoOutput) ? new File(tempDir, "mixed_pre_text.mp4") : config.getDestinationFile();
+                boolean needsOverlay = hasVideoOutput && (hasText || (v2 != null && !v2.getClips().isEmpty()));
+                File mixOut = needsOverlay ? new File(tempDir, "mixed_pre_overlay.mp4") : config.getDestinationFile();
                 mixCmd.add(mixOut.getAbsolutePath());
 
                 config.getCallback().onLog("\n▶ Final Mixdown...");
                 runProcess(mixCmd, config);
 
-                // Phase 5: Text overlay only (V2 is now merged into main video, no PiP pass)
-                if (hasText && hasVideoOutput) {
-                    File textOut = processOverlayPass(t1, null, mixOut, tempDir, "overlay", config);
+                // Phase 5: Overlays (V2 and Text)
+                if (needsOverlay) {
+                    File textOut = processOverlayPass(t1, v2, mixOut, tempDir, "overlay", config);
                     java.nio.file.Files.copy(textOut.toPath(), config.getDestinationFile().toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                 }
 
@@ -139,6 +140,10 @@ public class Exporter {
                 File[] files = tempDir.listFiles();
                 if (files != null) for (File f : files) f.delete();
                 tempDir.delete();
+
+                long endTime = System.currentTimeMillis();
+                long durationSec = (endTime - startTime) / 1000;
+                config.getCallback().onLog(String.format("\n✅ Export completed successfully in %d seconds.", durationSec));
 
                 config.getCallback().onComplete(true, config.getDestinationFile());
 
@@ -160,13 +165,15 @@ public class Exporter {
         cmd.add("-i"); cmd.add(v1Master.getAbsolutePath());
         
         List<File> v2ProcessedClips = new ArrayList<>();
-        List<Double> v2StartOffsets = new ArrayList<>();
         if (v2 != null && !v2.getClips().isEmpty()) {
             int clipIdx = 0;
             for (MainWorkhorse.TimelineClip clip : v2.getClips()) {
-                File processed = processPiPClip(clip, tempDir, "v2_pip_" + clipIdx, config);
+                boolean srcIsAudio = isAudioOnlyFile(clip.getMediaItem().getFile().getName());
+                // Use processVideoClip instead of processPiPClip so V2 gets the same aspect ratio/padding as V1
+                File processed = srcIsAudio
+                    ? processAudioAsVideoClip(clip, tempDir, "v2_pip_" + clipIdx, config, null)
+                    : processVideoClip(clip, tempDir, "v2_pip_" + clipIdx, config);
                 v2ProcessedClips.add(processed);
-                v2StartOffsets.add(clip.getStartSeconds());
                 // itsoffset shifts the input PTS by +startSeconds so the clip
                 // lines up with the global timeline inside filter_complex
                 cmd.add("-itsoffset"); cmd.add(String.valueOf(clip.getStartSeconds()));
@@ -226,10 +233,7 @@ public class Exporter {
                 
                 if (textFilters.length() > 0) textFilters.append(",");
                 textFilters.append(String.format(
-                    "drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill:enable='between(t,%.3f,%.3f)'",
-                    start, end));
-                textFilters.append(String.format(
-                    ",drawtext=textfile='%s'%s:fontcolor=%s:fontsize=%d:x=(w-text_w)/2:y=(h-text_h)/2:shadowcolor=black@0.8:shadowx=3:shadowy=3:enable='between(t,%.3f,%.3f)'",
+                    "drawtext=textfile='%s'%s:fontcolor=%s:fontsize=%d:x=(w-text_w)/2:y=(h-text_h)/2:shadowcolor=black@0.8:shadowx=3:shadowy=3:enable='between(t,%.3f,%.3f)'",
                     escapedPath, fontOption, color, size, start, end));
                 clipIdx++;
             }
@@ -238,8 +242,9 @@ public class Exporter {
         if (v2ProcessedClips.isEmpty() && !hasText) return v1Master;
         
         if (v2ProcessedClips.isEmpty() && hasText) {
-            // Text-only: vf chain handles video routing automatically
+            // Text-only
             cmd.add("-vf"); cmd.add(textFilters.toString());
+            cmd.add("-map"); cmd.add("0:v"); // Required when other streams are explicitly mapped
             cmd.add("-map"); cmd.add("0:a?");
         } else if (!v2ProcessedClips.isEmpty() && !hasText) {
             filter.setLength(filter.length() - 1);
@@ -343,40 +348,7 @@ public class Exporter {
     }
 
     // ─── Individual Clip Processors ───────────────────────────────────────────
-    private static File processPiPClip(MainWorkhorse.TimelineClip clip, File tempDir,
-                                         String name, ExportConfig config) throws Exception {
-        File out = new File(tempDir, name + ".mp4");
-        boolean srcHasAudio = hasAudioStream(clip.getMediaItem().getFile());
-        double speed = clip.getPlaybackSpeed();
-        List<String> cmd = new ArrayList<>();
-        cmd.add("ffmpeg"); cmd.add("-hide_banner"); cmd.add("-y");
-        cmd.add("-ss"); cmd.add(String.valueOf(clip.getMediaStartOffset()));
-        cmd.add("-t"); cmd.add(String.valueOf(clip.getDurationSeconds()));
-        cmd.add("-i"); cmd.add(clip.getMediaItem().getFile().getAbsolutePath());
-        cmd.add("-f"); cmd.add("lavfi");
-        cmd.add("-i"); cmd.add("anullsrc=r=48000:cl=stereo");
-
-        String res = config.getResolution().replace("x", ":");
-        String vFilter = "scale=" + res + ":force_original_aspect_ratio=decrease,fps=" + config.getFramerate() + ",format=yuv420p";
-        if (speed != 1.0) vFilter += ",setpts=" + (1.0 / speed) + "*PTS";
-
-        String aFilter = "atempo=" + clampAtempo(speed) + ",aformat=sample_rates=48000:channel_layouts=stereo";
-        String filterComplex = srcHasAudio
-                ? "[0:v]" + vFilter + "[v];[0:a]" + aFilter + "[a]"
-                : "[0:v]" + vFilter + "[v];[1:a]aformat=sample_rates=48000:channel_layouts=stereo[a]";
-
-        cmd.add("-filter_complex"); cmd.add(filterComplex);
-        cmd.add("-map"); cmd.add("[v]");
-        cmd.add("-map"); cmd.add("[a]");
-        cmd.add("-c:v"); cmd.add(config.getVideoCodec());
-        cmd.add("-b:v"); cmd.add(config.getVideoBitrate());
-        cmd.add("-preset"); cmd.add("fast");
-        cmd.add("-c:a"); cmd.add("aac");
-        cmd.add("-b:a"); cmd.add(config.getAudioBitrate());
-        cmd.add(out.getAbsolutePath());
-        runProcess(cmd, config);
-        return out;
-    }
+    // processPiPClip removed: V2 now uses processVideoClip to ensure identical padding to V1
 
     private static File processVideoClip(MainWorkhorse.TimelineClip clip, File tempDir,
                                          String name, ExportConfig config) throws Exception {

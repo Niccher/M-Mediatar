@@ -93,7 +93,10 @@
                     <Separator/>
 
                     <!-- Output Config -->
-                    <Label text="📁  Output Configuration" style="-fx-font-weight: bold; -fx-font-size: 13px;"/>
+                    <HBox spacing="10" alignment="CENTER_LEFT">
+                        <Label text="📁  Output Configuration" style="-fx-font-weight: bold; -fx-font-size: 13px;"/>
+                        <Label fx:id="lblRenderTime" text="" style="-fx-font-weight: bold; -fx-text-fill: #2ecc71;"/>
+                    </HBox>
                     <GridPane hgap="10" vgap="9">
                         <columnConstraints>
                             <ColumnConstraints minWidth="120" prefWidth="130"/>

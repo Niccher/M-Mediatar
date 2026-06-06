@@ -1195,6 +1195,12 @@ public class MainWorkhorse {
             stage.setScene(new javafx.scene.Scene(root));
             stage.initModality(javafx.stage.Modality.APPLICATION_MODAL);
             stage.initOwner(rootPane.getScene().getWindow());
+            
+            javafx.geometry.Rectangle2D bounds = javafx.stage.Screen.getPrimary().getVisualBounds();
+            stage.setMaxWidth(bounds.getWidth());
+            stage.setMaxHeight(bounds.getHeight());
+            stage.sizeToScene();
+            
             stage.showAndWait();
         } catch (Exception e) {
             e.printStackTrace();

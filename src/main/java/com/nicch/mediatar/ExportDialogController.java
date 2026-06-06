@@ -23,6 +23,7 @@ public class ExportDialogController {
     @FXML private TextField txtFilename;
     @FXML private TextField txtDestDir;
     @FXML private TextArea terminalOutput;
+    @FXML private Label lblRenderTime;
     @FXML private Button btnRender;
     @FXML private Button btnClose;
     @FXML private Button btnOpenFolder;
@@ -166,6 +167,7 @@ public class ExportDialogController {
         btnClose.setDisable(true);
         btnOpenFolder.setVisible(false);
         terminalOutput.clear();
+        lblRenderTime.setText("Rendering...");
 
         appendLog("══════════════ MEDIATAR RENDER ENGINE ══════════════");
         appendLog("Destination  : " + destFile.getAbsolutePath());
@@ -176,6 +178,7 @@ public class ExportDialogController {
         appendLog("════════════════════════════════════════════════════\n");
 
         lastRenderedFile = destFile;
+        long startTime = System.currentTimeMillis();
 
         ExportConfig config = new ExportConfig(
             resolution,
@@ -193,6 +196,8 @@ public class ExportDialogController {
                         btnRender.setDisable(false);
                         btnClose.setDisable(false);
                         if (success) {
+                            long durationSec = (System.currentTimeMillis() - startTime) / 1000;
+                            lblRenderTime.setText(String.format("⏱ Completed in %ds", durationSec));
                             appendLog("\n✅ EXPORT COMPLETED SUCCESSFULLY.");
                             btnOpenFolder.setVisible(true);
                             Alert a = new Alert(Alert.AlertType.CONFIRMATION,
@@ -202,6 +207,8 @@ public class ExportDialogController {
                             a.showAndWait();
                             if (a.getResult() == ButtonType.YES) openInFileManager(outputFile);
                         } else {
+                            lblRenderTime.setText("❌ Failed");
+                            lblRenderTime.setStyle("-fx-font-weight: bold; -fx-text-fill: #e74c3c;");
                             appendLog("\n❌ EXPORT FAILED. Check the log above for errors.");
                             showAlert("Export Failed", "Render failed. Check the terminal output.");
                         }

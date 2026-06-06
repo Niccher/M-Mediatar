@@ -36,9 +36,13 @@ public class Loader extends Application {
 
         Parent loaderLayout = createLoaderLayout(stage);
 
-        // Increased size to 1440x900 for a larger default workspace
-        scene = new Scene(loaderLayout, 1440, 900);
+        javafx.geometry.Rectangle2D bounds = javafx.stage.Screen.getPrimary().getVisualBounds();
+        double initialWidth = Math.min(1440, bounds.getWidth() - 40);
+        double initialHeight = Math.min(900, bounds.getHeight() - 40);
+        
+        scene = new Scene(loaderLayout, initialWidth, initialHeight);
         stage.setScene(scene);
+        stage.setMaximized(true);
         stage.show();
     }
 
