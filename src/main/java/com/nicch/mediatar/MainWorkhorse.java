@@ -39,7 +39,7 @@ public class MainWorkhorse {
     
     @FXML private ToggleButton btnSelectTool;
     @FXML private ToggleButton btnBladeTool;
-    @FXML private Button btnImport, btnPlay, btnExport;
+    @FXML private Button btnImport, btnPlay, btnExport, btnRenderStatus;
     @FXML private Button btnStepBack, btnRewind, btnFastForward, btnStepForward;
     @FXML private Button btnPlayTimeline, btnStopTimeline;
     @FXML private ToggleButton btnLoop;
@@ -82,6 +82,8 @@ public class MainWorkhorse {
     
     private boolean isPlayingTimeline = false;
     private double globalPlayheadTime = 0.0;
+    private Stage exportStage;
+    private ExportDialogController exportController;
     private TimelineClip activeTimelineClip = null;
     private TimelineClip activeTimelineClipV2 = null;
     private MediaPlayer currentPlayerV2;
@@ -1185,26 +1187,51 @@ public class MainWorkhorse {
 
     @FXML private void handleExportAction() {
         try {
-            FXMLLoader loader = new FXMLLoader(getClass().getResource("export_dialog.fxml"));
-            Parent root = loader.load();
-            ExportDialogController controller = loader.getController();
-            controller.setTracks(tracks);
+            if (exportStage == null) {
+                FXMLLoader loader = new FXMLLoader(getClass().getResource("export_dialog.fxml"));
+                Parent root = loader.load();
+                exportController = loader.getController();
+                exportController.setMainWorkhorse(this);
 
-            Stage stage = new Stage();
-            stage.setTitle("Advanced Export");
-            stage.setScene(new javafx.scene.Scene(root));
-            stage.initModality(javafx.stage.Modality.APPLICATION_MODAL);
-            stage.initOwner(rootPane.getScene().getWindow());
-            
-            javafx.geometry.Rectangle2D bounds = javafx.stage.Screen.getPrimary().getVisualBounds();
-            stage.setMaxWidth(bounds.getWidth());
-            stage.setMaxHeight(bounds.getHeight());
-            stage.sizeToScene();
-            
-            stage.showAndWait();
+                exportStage = new Stage();
+                exportStage.setTitle("Advanced Export");
+                javafx.scene.Scene scene = new javafx.scene.Scene(root);
+                exportStage.setScene(scene);
+                exportStage.initOwner(rootPane.getScene().getWindow());
+                
+                javafx.geometry.Rectangle2D bounds = javafx.stage.Screen.getPrimary().getVisualBounds();
+                exportStage.setMaxWidth(bounds.getWidth());
+                exportStage.setMaxHeight(bounds.getHeight());
+                exportStage.sizeToScene();
+                
+                exportStage.setOnCloseRequest(e -> {
+                    e.consume();
+                    exportStage.hide();
+                });
+            }
+            exportController.setTracks(tracks);
+            exportStage.show();
+            exportStage.toFront();
         } catch (Exception e) {
             e.printStackTrace();
             showAlert("Error", "Could not open Export Dialog: " + e.getMessage());
+        }
+    }
+
+    public void setRenderStatus(boolean rendering, boolean finished) {
+        if (rendering) {
+            btnRenderStatus.setVisible(true);
+            btnRenderStatus.setManaged(true);
+            btnRenderStatus.setText("Rendering... (Click to View)");
+            btnRenderStatus.setStyle("-fx-background-color: #cb4b16; -fx-text-fill: white; -fx-font-size: 14px; -fx-font-weight: bold;");
+        } else if (finished) {
+            btnRenderStatus.setVisible(true);
+            btnRenderStatus.setManaged(true);
+            btnRenderStatus.setText("Render Finished! (Click to View)");
+            btnRenderStatus.setStyle("-fx-background-color: #859900; -fx-text-fill: white; -fx-font-size: 14px; -fx-font-weight: bold;");
+        } else {
+            btnRenderStatus.setVisible(false);
+            btnRenderStatus.setManaged(false);
         }
     }
     @FXML private void handleSaveAction() { showAlert("Save", "Save functionality is not yet implemented."); }

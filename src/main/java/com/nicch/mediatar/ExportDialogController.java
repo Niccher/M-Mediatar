@@ -32,6 +32,11 @@ public class ExportDialogController {
     private File selectedDirectory;
     private File lastRenderedFile;
     private String detectedFileManager;
+    private MainWorkhorse mainWorkhorse;
+
+    public void setMainWorkhorse(MainWorkhorse mainWorkhorse) {
+        this.mainWorkhorse = mainWorkhorse;
+    }
 
     @FXML
     public void initialize() {
@@ -168,6 +173,11 @@ public class ExportDialogController {
         btnOpenFolder.setVisible(false);
         terminalOutput.clear();
         lblRenderTime.setText("Rendering...");
+        
+        if (mainWorkhorse != null) {
+            mainWorkhorse.setRenderStatus(true, false);
+            ((Stage) rootPane.getScene().getWindow()).hide();
+        }
 
         appendLog("══════════════ MEDIATAR RENDER ENGINE ══════════════");
         appendLog("Destination  : " + destFile.getAbsolutePath());
@@ -195,6 +205,7 @@ public class ExportDialogController {
                     Platform.runLater(() -> {
                         btnRender.setDisable(false);
                         btnClose.setDisable(false);
+                        if (mainWorkhorse != null) mainWorkhorse.setRenderStatus(false, true);
                         if (success) {
                             long durationSec = (System.currentTimeMillis() - startTime) / 1000;
                             lblRenderTime.setText(String.format("⏱ Completed in %ds", durationSec));
