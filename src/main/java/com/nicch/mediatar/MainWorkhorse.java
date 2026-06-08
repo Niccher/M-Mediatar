@@ -1234,7 +1234,154 @@ public class MainWorkhorse {
             btnRenderStatus.setManaged(false);
         }
     }
-    @FXML private void handleSaveAction() { showAlert("Save", "Save functionality is not yet implemented."); }
+
+    @FXML
+    private void handleSaveAction() {
+        FileChooser fc = new FileChooser();
+        fc.setTitle("Save Mediatar Project");
+        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Mediatar Project Files (*.mediatar)", "*.mediatar"));
+        File file = fc.showSaveDialog(rootPane.getScene().getWindow());
+        if (file != null) {
+            // Enforce .mediatar extension regardless of what the user typed
+            if (!file.getName().toLowerCase().endsWith(".mediatar")) {
+                file = new File(file.getAbsolutePath() + ".mediatar");
+            }
+            try {
+                ProjectSerializer.saveProject(file, mediaItems, tracks);
+                showAlert("Success", "Project saved successfully to:\n" + file.getAbsolutePath());
+            } catch (Exception e) {
+                e.printStackTrace();
+                showAlert("Save Error", "Failed to save project:\n" + e.getMessage());
+            }
+        }
+    }
+
+    @FXML
+    private void clearTimeline() {
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+            "Clear all clips from the timeline?\nYour imported media files will remain in the pool.",
+            ButtonType.YES, ButtonType.CANCEL);
+        confirm.setTitle("Clear Timeline");
+        confirm.setHeaderText(null);
+        confirm.showAndWait();
+        if (confirm.getResult() != ButtonType.YES) return;
+
+        stopTimeline();
+        for (TimelineTrack track : tracks) {
+            track.getClips().clear();
+        }
+        updateInspector(null);
+        globalPlayheadTime = 0.0;
+        timelinePane.setPlayheadTime(0.0);
+        if (lblLargeTimecode != null) lblLargeTimecode.setText(formatTimecode(0.0));
+        timelinePane.redraw();
+    }
+
+    @FXML
+    private void handleLoadAction() {
+        FileChooser fc = new FileChooser();
+        fc.setTitle("Open Mediatar Project");
+        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Mediatar Project Files (*.mediatar)", "*.mediatar"));
+        File file = fc.showOpenDialog(rootPane.getScene().getWindow());
+        if (file != null) {
+            try {
+                stopTimeline();
+
+                ProjectSerializer.LoadedProject loaded = ProjectSerializer.loadProject(file);
+
+                // Clear current workspace
+                mediaItems.clear();
+                for (TimelineTrack track : tracks) {
+                    track.getClips().clear();
+                }
+
+                // Restore Media Pool
+                List<String> missingFiles = new ArrayList<>();
+                for (File f : loaded.mediaPoolFiles) {
+                    if (!f.exists()) {
+                        missingFiles.add(f.getName());
+                    }
+                    mediaItems.add(new MediaItem(f));
+                }
+
+                // Restore Tracks and Clips
+                for (ProjectSerializer.LoadedTrack loadedTrack : loaded.tracks) {
+                    // Find corresponding track
+                    TimelineTrack targetTrack = null;
+                    for (TimelineTrack t : tracks) {
+                        if (t.getName().equals(loadedTrack.name)) {
+                            targetTrack = t;
+                            break;
+                        }
+                    }
+                    if (targetTrack == null) continue;
+
+                    for (ProjectSerializer.LoadedClip loadedClip : loadedTrack.clips) {
+                        MediaItem mediaItem = null;
+                        if (loadedClip.filePath != null) {
+                            // Find in media pool
+                            for (MediaItem item : mediaItems) {
+                                if (item.getFile().getAbsolutePath().equals(loadedClip.filePath)) {
+                                    mediaItem = item;
+                                    break;
+                                }
+                            }
+                            // Fallback if not found in mediaPoolFiles (shouldn't happen but just in case)
+                            if (mediaItem == null) {
+                                File clipFile = new File(loadedClip.filePath);
+                                if (!clipFile.exists()) {
+                                    missingFiles.add(clipFile.getName());
+                                }
+                                mediaItem = new MediaItem(clipFile);
+                                mediaItems.add(mediaItem);
+                            }
+                        }
+
+                        TimelineClip clip;
+                        if (targetTrack.getType() == TrackType.TEXT) {
+                            clip = new TimelineClip(loadedClip.textContent, loadedClip.start, loadedClip.duration, tracks.indexOf(targetTrack));
+                            clip.setTextColor(loadedClip.textColor);
+                            clip.setFontSize(loadedClip.fontSize);
+                        } else {
+                            clip = new TimelineClip(mediaItem, loadedClip.start, loadedClip.duration, tracks.indexOf(targetTrack), loadedClip.offset);
+                            clip.setPlaybackSpeed(loadedClip.speed);
+                            clip.setOpacity(loadedClip.opacity);
+                            clip.setScale(loadedClip.scale);
+                            clip.setPosX(loadedClip.posX);
+                            clip.setPosY(loadedClip.posY);
+                        }
+                        clip.setAliasName(loadedClip.aliasName);
+                        clip.setMuted(loadedClip.isMuted);
+
+                        targetTrack.getClips().add(clip);
+                    }
+                }
+
+                // Reset and refresh workspace state
+                updateInspector(null);
+                timelinePane.redraw();
+
+                globalPlayheadTime = 0.0;
+                timelinePane.setPlayheadTime(0.0);
+                evaluateTimelinePlayback(0.0);
+                if (lblLargeTimecode != null) {
+                    lblLargeTimecode.setText(formatTimecode(0.0));
+                }
+
+                if (!missingFiles.isEmpty()) {
+                    showAlert("Warning", "Project loaded, but the following files were not found on disk:\n" 
+                        + String.join("\n", missingFiles) + "\n\nPaths might need to be resolved for playback.");
+                } else {
+                    showAlert("Success", "Project loaded successfully!");
+                }
+
+            } catch (Exception e) {
+                e.printStackTrace();
+                showAlert("Load Error", "Failed to load project:\n" + e.getMessage());
+            }
+        }
+    }
+
     @FXML private void handleExit() { Platform.exit(); System.exit(0); }
     
     @FXML private void applySolarizedTheme() { ThemeManager.currentTheme = ThemeManager.Theme.SOLARIZED; ThemeManager.applyTheme(rootPane); }

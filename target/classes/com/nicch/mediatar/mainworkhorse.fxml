@@ -17,6 +17,7 @@
                 <Menu text="File">
                     <MenuItem text="Open Media File..." onAction="#handleImportAction"/>
                     <MenuItem text="Save Project" onAction="#handleSaveAction"/>
+                    <MenuItem text="Open Project..." onAction="#handleLoadAction"/>
                     <MenuItem text="Export Video" onAction="#handleExportAction"/>
                     <SeparatorMenuItem/>
                     <MenuItem text="Exit" onAction="#handleExit"/>
@@ -47,6 +48,8 @@
                 <ToggleButton fx:id="btnLoop" text="Loop" style="-fx-text-fill: #2aa198; -fx-font-size: 14px; -fx-font-weight: bold;"/>
                 <Separator/>
                 <Button fx:id="btnExport" text="Export" onAction="#handleExportAction" style="-fx-text-fill: #2aa198; -fx-font-size: 14px; -fx-font-weight: bold;"/>
+                <Button fx:id="btnClearTimeline" text="🗑 Clear Timeline" onAction="#clearTimeline" style="-fx-text-fill: #dc322f; -fx-font-size: 14px; -fx-font-weight: bold;"/>
+                <Button fx:id="btnRenderStatus" text="Rendering... (Click to View)" onAction="#handleExportAction" visible="false" managed="false" style="-fx-background-color: #cb4b16; -fx-text-fill: white; -fx-font-size: 14px; -fx-font-weight: bold;"/>
             </ToolBar>
         </VBox>
     </top>
