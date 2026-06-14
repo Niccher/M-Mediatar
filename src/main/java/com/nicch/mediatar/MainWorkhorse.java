@@ -684,19 +684,22 @@ public class MainWorkhorse {
         fc.setTitle("Import Media File(s)");
         
         fc.getExtensionFilters().addAll(
-            new FileChooser.ExtensionFilter("All Media", "*.mp4", "*.mov", "*.mkv", "*.webm", "*.mp3", "*.wav", "*.aac", "*.m4a"),
-            new FileChooser.ExtensionFilter("Video Files", "*.mp4", "*.mov", "*.mkv", "*.webm"),
-            new FileChooser.ExtensionFilter("Audio Files", "*.mp3", "*.wav", "*.aac", "*.m4a")
+            new FileChooser.ExtensionFilter("All Media", "*.mp4", "*.mov", "*.mkv", "*.webm", "*.avi", "*.flv", "*.wmv", "*.mpg", "*.mpeg", "*.3gp", "*.mp3", "*.wav", "*.aac", "*.m4a", "*.ogg", "*.flac", "*.opus"),
+            new FileChooser.ExtensionFilter("Video Files", "*.mp4", "*.mov", "*.mkv", "*.webm", "*.avi", "*.flv", "*.wmv", "*.mpg", "*.mpeg", "*.3gp"),
+            new FileChooser.ExtensionFilter("Audio Files", "*.mp3", "*.wav", "*.aac", "*.m4a", "*.ogg", "*.flac", "*.opus")
         );
         
         List<File> files = fc.showOpenMultipleDialog(rootPane.getScene().getWindow());
         if (files != null) {
             for (File file : files) {
-                if (file.getName().toLowerCase().endsWith(".aac")) {
+                String nameLower = file.getName().toLowerCase();
+                if (nameLower.endsWith(".mp4") || nameLower.endsWith(".mp3") || nameLower.endsWith(".wav") || nameLower.endsWith(".m4a")) {
+                    mediaItems.add(new MediaItem(file));
+                } else if (nameLower.endsWith(".aac")) {
                     File m4aFile = new File(file.getParentFile(), file.getName().substring(0, file.getName().lastIndexOf('.')) + ".m4a");
                     if (!m4aFile.exists()) {
                         try {
-                            ProcessBuilder pb = new ProcessBuilder("ffmpeg", "-i", file.getAbsolutePath(), "-c:a", "copy", m4aFile.getAbsolutePath());
+                            ProcessBuilder pb = new ProcessBuilder("ffmpeg", "-y", "-i", file.getAbsolutePath(), "-c:a", "copy", m4aFile.getAbsolutePath());
                             Process p = pb.start();
                             p.waitFor();
                         } catch (Exception e) {
@@ -708,7 +711,7 @@ public class MainWorkhorse {
                     } else {
                         mediaItems.add(new MediaItem(file));
                     }
-                } else if (file.getName().toLowerCase().endsWith(".webm") || file.getName().toLowerCase().endsWith(".mkv")) {
+                } else if (isVideoFile(nameLower)) {
                     File mp4File = new File(file.getParentFile(), file.getName().substring(0, file.getName().lastIndexOf('.')) + ".mp4");
                     if (!mp4File.exists()) {
                         Alert alert = new Alert(Alert.AlertType.INFORMATION, "Converting " + file.getName() + " to MP4 for JavaFX compatibility. This might take a moment depending on the video length.", javafx.scene.control.ButtonType.OK);
@@ -733,11 +736,47 @@ public class MainWorkhorse {
                     } else {
                         mediaItems.add(new MediaItem(mp4File));
                     }
+                } else if (isAudioFile(nameLower)) {
+                    File mp3File = new File(file.getParentFile(), file.getName().substring(0, file.getName().lastIndexOf('.')) + ".mp3");
+                    if (!mp3File.exists()) {
+                        Alert alert = new Alert(Alert.AlertType.INFORMATION, "Converting " + file.getName() + " to MP3 for JavaFX compatibility.", javafx.scene.control.ButtonType.OK);
+                        alert.show();
+                        new Thread(() -> {
+                            try {
+                                ProcessBuilder pb = new ProcessBuilder("ffmpeg", "-y", "-i", file.getAbsolutePath(), "-c:a", "libmp3lame", "-q:a", "2", mp3File.getAbsolutePath());
+                                Process p = pb.start();
+                                p.waitFor();
+                                Platform.runLater(() -> {
+                                    alert.close();
+                                    if (mp3File.exists()) {
+                                        mediaItems.add(new MediaItem(mp3File));
+                                    } else {
+                                        showAlert("Conversion Failed", "Could not convert " + file.getName());
+                                    }
+                                });
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            }
+                        }).start();
+                    } else {
+                        mediaItems.add(new MediaItem(mp3File));
+                    }
                 } else {
                     mediaItems.add(new MediaItem(file));
                 }
             }
         }
+    }
+
+    private boolean isVideoFile(String filename) {
+        return filename.endsWith(".webm") || filename.endsWith(".mkv") || filename.endsWith(".mov") ||
+               filename.endsWith(".avi") || filename.endsWith(".flv") || filename.endsWith(".wmv") ||
+               filename.endsWith(".3gp") || filename.endsWith(".mpg") || filename.endsWith(".mpeg");
+    }
+
+    private boolean isAudioFile(String filename) {
+        return filename.endsWith(".ogg") || filename.endsWith(".flac") || filename.endsWith(".wma") ||
+               filename.endsWith(".m4r") || filename.endsWith(".opus") || filename.endsWith(".amr");
     }
 
     @FXML 
