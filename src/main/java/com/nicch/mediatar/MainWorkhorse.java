@@ -8,6 +8,7 @@ import javafx.scene.control.*;
 import javafx.scene.input.*;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.layout.HBox;
 import javafx.scene.media.Media;
 import javafx.scene.media.MediaPlayer;
 import javafx.scene.media.MediaView;
@@ -1528,6 +1529,116 @@ public class MainWorkhorse {
             }
         } catch (Exception e) {
             showAlert("Error", "Could not open file manager: " + e.getMessage());
+        }
+    }
+
+    @FXML
+    private void handleAboutAction() {
+        Stage stage = new Stage();
+        stage.setTitle("About MMediatar");
+        stage.initOwner(rootPane.getScene().getWindow());
+        stage.initModality(javafx.stage.Modality.APPLICATION_MODAL);
+        
+        BorderPane layout = new BorderPane();
+        layout.setPadding(new javafx.geometry.Insets(20));
+        ThemeManager.applyTheme(layout);
+        
+        // --- Header ---
+        VBox header = new VBox(5);
+        header.setAlignment(javafx.geometry.Pos.CENTER);
+        
+        Label titleLabel = new Label("MMediatar");
+        titleLabel.setFont(javafx.scene.text.Font.font("System", javafx.scene.text.FontWeight.BOLD, 26));
+        titleLabel.setStyle("-fx-text-fill: #586e75;");
+        
+        Label versionLabel = new Label("Version 2.4.0 (Stable)");
+        versionLabel.setFont(javafx.scene.text.Font.font("System", 13));
+        versionLabel.setStyle("-fx-text-fill: #657b83;");
+        
+        header.getChildren().addAll(titleLabel, versionLabel);
+        layout.setTop(header);
+        
+        // --- Center Panel ---
+        VBox centerPanel = new VBox(12);
+        centerPanel.setAlignment(javafx.geometry.Pos.CENTER);
+        centerPanel.setPadding(new javafx.geometry.Insets(15, 0, 15, 0));
+        
+        // App Description
+        VBox descBox = new VBox(5);
+        descBox.setMaxWidth(480);
+        descBox.setPadding(new javafx.geometry.Insets(12));
+        descBox.setStyle("-fx-border-color: #93a1a1; -fx-border-width: 1; -fx-border-radius: 6; -fx-background-color: #eee8d5;");
+        
+        Label descTitle = new Label("About MMediatar:");
+        descTitle.setFont(javafx.scene.text.Font.font("System", javafx.scene.text.FontWeight.BOLD, 13));
+        descTitle.setStyle("-fx-text-fill: #2aa198;");
+        
+        Label descBody = new Label("MMediatar is a lightweight JavaFX-based video editor. It allows you to arrange video, audio, and text clips on a multi-track timeline, preview them in real-time using JavaFX MediaViews, and export the final composition using native FFmpeg commands.");
+        descBody.setWrapText(true);
+        descBody.setStyle("-fx-text-fill: #586e75;");
+        
+        descBox.getChildren().addAll(descTitle, descBody);
+
+        VBox depBox = new VBox(8);
+        depBox.setMaxWidth(480);
+        depBox.setPadding(new javafx.geometry.Insets(12));
+        depBox.setStyle("-fx-border-color: #93a1a1; -fx-border-width: 1; -fx-border-radius: 6; -fx-background-color: #eee8d5;");
+        
+        Label depTitle = new Label("Native Core Dependencies & Capabilities:");
+        depTitle.setFont(javafx.scene.text.Font.font("System", javafx.scene.text.FontWeight.BOLD, 13));
+        depTitle.setStyle("-fx-text-fill: #859900;");
+        depBox.getChildren().add(depTitle);
+        
+        boolean hasFFmpeg = isCommandAvailable("ffmpeg");
+        boolean hasFFprobe = isCommandAvailable("ffprobe");
+        String fileManager = detectFileManager();
+        boolean hasFileManager = fileManager != null && !fileManager.isEmpty();
+        
+        Label ffmpegLabel = new Label((hasFFmpeg ? "✔" : "❌") + " FFmpeg : Transcodes media, generates waveforms, and renders final video exports.");
+        ffmpegLabel.setWrapText(true);
+        ffmpegLabel.setStyle("-fx-text-fill: #586e75;");
+        
+        Label ffprobeLabel = new Label((hasFFprobe ? "✔" : "❌") + " FFprobe : Analyzes media streams, validates metadata, and extracts durations.");
+        ffprobeLabel.setWrapText(true);
+        ffprobeLabel.setStyle("-fx-text-fill: #586e75;");
+        
+        Label fmLabel = new Label((hasFileManager ? "✔" : "❌") + " File Manager (" + fileManager + ") : Reveals exported files natively in your OS.");
+        fmLabel.setWrapText(true);
+        fmLabel.setStyle("-fx-text-fill: #586e75;");
+        
+        depBox.getChildren().addAll(ffmpegLabel, ffprobeLabel, fmLabel);
+        
+        Label sysInfo = new Label("Release: #2026.05.21-REV4 (May 21, 2026)");
+        sysInfo.setFont(javafx.scene.text.Font.font("Consolas", 12));
+        sysInfo.setStyle("-fx-text-fill: #93a1a1;");
+        
+        centerPanel.getChildren().addAll(descBox, depBox, sysInfo);
+        layout.setCenter(centerPanel);
+        
+        // --- Bottom ---
+        HBox bottomPanel = new HBox();
+        bottomPanel.setAlignment(javafx.geometry.Pos.CENTER);
+        
+        Button btnClose = new Button("Close");
+        btnClose.setFont(javafx.scene.text.Font.font("System", javafx.scene.text.FontWeight.BOLD, 13));
+        btnClose.setStyle("-fx-background-color: #859900; -fx-text-fill: white; -fx-cursor: hand; -fx-padding: 8 20 8 20; -fx-background-radius: 4;");
+        btnClose.setOnAction(e -> stage.close());
+        
+        bottomPanel.getChildren().add(btnClose);
+        layout.setBottom(bottomPanel);
+        
+        javafx.scene.Scene scene = new javafx.scene.Scene(layout, 520, 360);
+        stage.setScene(scene);
+        stage.setResizable(false);
+        stage.showAndWait();
+    }
+
+    private boolean isCommandAvailable(String cmd) {
+        try {
+            Process p = Runtime.getRuntime().exec(new String[]{"which", cmd});
+            return p.waitFor() == 0;
+        } catch (Exception e) {
+            return false;
         }
     }
 }

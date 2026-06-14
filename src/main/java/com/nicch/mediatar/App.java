@@ -13,7 +13,7 @@ public class App {
         System.out.println("Booting Media Workspace Launcher...");
         
         // Direct vanilla call to launch your Loader class
-        Application.launch(Loader.class, args);
+        Application.launch(MMediatar.class, args);
     }
 }
 
