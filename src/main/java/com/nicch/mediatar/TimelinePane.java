@@ -150,6 +150,9 @@ public class TimelinePane extends Region {
                     audioExt.setAliasName(audioName);
                     
                     tracks.get(audioTrackIdx).getClips().add(audioExt);
+                    if (audioExt.getMediaItem() != null) {
+                        audioExt.getMediaItem().addOnLoadCallback(this::redraw);
+                    }
                     selectedClip.setMuted(true);
                     redraw();
                 }
@@ -193,6 +196,15 @@ public class TimelinePane extends Region {
 
     public void setTracks(List<MainWorkhorse.TimelineTrack> tracks) {
         this.tracks = tracks;
+        if (tracks != null) {
+            for (MainWorkhorse.TimelineTrack track : tracks) {
+                for (MainWorkhorse.TimelineClip clip : track.getClips()) {
+                    if (clip.getMediaItem() != null) {
+                        clip.getMediaItem().addOnLoadCallback(this::redraw);
+                    }
+                }
+            }
+        }
         redraw();
     }
     
@@ -297,6 +309,35 @@ public class TimelinePane extends Region {
         }
 
         gc.fillRect(x, y + 4, clipW, trackH - 8);
+
+        // Draw Audio Waveform inside audio clip if peaks data is available
+        if (type == MainWorkhorse.TrackType.AUDIO && clip.getMediaItem() != null) {
+            float[] peaks = clip.getMediaItem().getAudioPeaks();
+            if (peaks != null && peaks.length > 0) {
+                if (clip == selectedClip) {
+                    gc.setStroke(Color.rgb(255, 255, 255, 0.85));
+                } else {
+                    gc.setStroke(Color.rgb(200, 255, 200, 0.7));
+                }
+                gc.setLineWidth(1.0);
+                
+                double centerY = y + trackH / 2.0;
+                double maxAmplitudeH = trackH - 16.0; // padding inside the block
+                
+                for (double px = 0; px < clipW; px += 1.0) {
+                    double timeInClip = px * zoomSecondsPerPixel;
+                    double mediaTime = clip.getMediaStartOffset() + timeInClip;
+                    int peakIdx = (int) (mediaTime * 50.0);
+                    
+                    if (peakIdx >= 0 && peakIdx < peaks.length) {
+                        float peakVal = peaks[peakIdx];
+                        double halfBarH = (peakVal * maxAmplitudeH) / 2.0;
+                        gc.strokeLine(x + px, centerY - halfBarH, x + px, centerY + halfBarH);
+                    }
+                }
+            }
+        }
+
         gc.setLineWidth(1.5);
         gc.strokeRect(x, y + 4, clipW, trackH - 8);
 
@@ -471,6 +512,9 @@ public class TimelinePane extends Region {
                 clip.getMediaItem(), splitTime, rightDur, clip.getTrackIndex(), clip.getMediaStartOffset() + leftDur);
         clip.setDurationSeconds(leftDur);
         tracks.get(clip.getTrackIndex()).getClips().add(right);
+        if (right.getMediaItem() != null) {
+            right.getMediaItem().addOnLoadCallback(this::redraw);
+        }
         redraw();
     }
 
@@ -514,6 +558,9 @@ public class TimelinePane extends Region {
     public void addClipExternal(MainWorkhorse.MediaItem item, double startTime, int trackIdx) {
         MainWorkhorse.TimelineClip clip = new MainWorkhorse.TimelineClip(item, startTime, 5.0, trackIdx);
         tracks.get(trackIdx).getClips().add(clip);
+        if (item != null) {
+            item.addOnLoadCallback(this::redraw);
+        }
         redraw();
     }
 

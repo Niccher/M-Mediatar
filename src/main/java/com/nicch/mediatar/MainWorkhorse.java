@@ -95,9 +95,77 @@ public class MainWorkhorse {
 
     public static class MediaItem {
         private final File file;
-        public MediaItem(File file) { this.file = file; }
+        private float[] audioPeaks;
+        private final List<Runnable> onLoadCallbacks = new ArrayList<>();
+        private boolean isLoaded = false;
+
+        public MediaItem(File file) {
+            this.file = file;
+            extractPeaksAsync();
+        }
+
         public File getFile() { return file; }
         public String getFileName() { return file.getName(); }
+        
+        public synchronized float[] getAudioPeaks() {
+            return audioPeaks;
+        }
+
+        public synchronized void addOnLoadCallback(Runnable callback) {
+            if (isLoaded) {
+                Platform.runLater(callback);
+            } else {
+                onLoadCallbacks.add(callback);
+            }
+        }
+
+        private void extractPeaksAsync() {
+            new Thread(() -> {
+                float[] peaks = extractPeaks(file);
+                synchronized (MediaItem.this) {
+                    audioPeaks = peaks;
+                    isLoaded = true;
+                    for (Runnable callback : onLoadCallbacks) {
+                        Platform.runLater(callback);
+                    }
+                    onLoadCallbacks.clear();
+                }
+            }).start();
+        }
+
+        private float[] extractPeaks(File mediaFile) {
+            try {
+                ProcessBuilder pb = new ProcessBuilder(
+                    "ffmpeg", "-y", "-i", mediaFile.getAbsolutePath(),
+                    "-ac", "1", "-ar", "50", "-f", "s8", "-"
+                );
+                pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+                
+                Process p = pb.start();
+                java.io.InputStream is = p.getInputStream();
+                
+                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                byte[] buffer = new byte[4096];
+                int bytesRead;
+                while ((bytesRead = is.read(buffer)) != -1) {
+                    baos.write(buffer, 0, bytesRead);
+                }
+                p.waitFor();
+                
+                byte[] rawBytes = baos.toByteArray();
+                if (rawBytes.length == 0) return null;
+                
+                float[] peaks = new float[rawBytes.length];
+                for (int i = 0; i < rawBytes.length; i++) {
+                    float val = Math.abs(rawBytes[i]) / 128.0f;
+                    peaks[i] = Math.min(1.0f, val);
+                }
+                return peaks;
+            } catch (Exception e) {
+                e.printStackTrace();
+                return null;
+            }
+        }
     }
 
     public static class TimelineClip {
