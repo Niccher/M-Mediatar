@@ -3,6 +3,7 @@ module com.nicch.mediatar {
     requires javafx.fxml;
     requires javafx.media;     // ← Add this line
     requires java.xml;
+    requires java.prefs;
 
     opens com.nicch.mediatar to javafx.fxml;
     exports com.nicch.mediatar;

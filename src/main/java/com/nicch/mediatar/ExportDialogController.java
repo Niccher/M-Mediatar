@@ -91,8 +91,18 @@ public class ExportDialogController {
             }
         });
 
+        // Initialize default export directory from persistent storage
+        selectedDirectory = WorkspaceStorage.getExportDirectory();
+        if (txtDestDir != null && selectedDirectory != null) {
+            txtDestDir.setText(selectedDirectory.getAbsolutePath());
+        }
+
         // Apply the current global theme to this dialog
         ThemeManager.applyTheme(rootPane);
+    }
+
+    public BorderPane getRootPane() {
+        return rootPane;
     }
 
     public void setTracks(List<MainWorkhorse.TimelineTrack> tracks) {
@@ -117,10 +127,14 @@ public class ExportDialogController {
     private void browseDirectory() {
         DirectoryChooser dc = new DirectoryChooser();
         dc.setTitle("Select Destination Directory");
+        if (selectedDirectory != null && selectedDirectory.exists()) {
+            dc.setInitialDirectory(selectedDirectory);
+        }
         File dir = dc.showDialog(txtDestDir.getScene().getWindow());
         if (dir != null) {
             selectedDirectory = dir;
             txtDestDir.setText(dir.getAbsolutePath());
+            WorkspaceStorage.setExportDirectory(dir);
         }
     }
 
@@ -160,6 +174,7 @@ public class ExportDialogController {
         File destFile = new File(selectedDirectory, filename + ext);
         if (destFile.exists()) {
             Alert alert = new Alert(Alert.AlertType.CONFIRMATION, "File already exists. Overwrite?", ButtonType.YES, ButtonType.NO);
+            ThemeManager.applyTheme(alert);
             alert.showAndWait();
             if (alert.getResult() != ButtonType.YES) return;
         }
@@ -215,6 +230,7 @@ public class ExportDialogController {
                                 "Render completed!\n" + outputFile.getAbsolutePath() + "\n\nOpen output folder now?",
                                 ButtonType.YES, ButtonType.NO);
                             a.setTitle("Export Complete");
+                            ThemeManager.applyTheme(a);
                             a.showAndWait();
                             if (a.getResult() == ButtonType.YES) openInFileManager(outputFile);
                         } else {
@@ -271,6 +287,7 @@ public class ExportDialogController {
         alert.setTitle(title);
         alert.setHeaderText(null);
         alert.setContentText(msg);
+        ThemeManager.applyTheme(alert);
         alert.showAndWait();
     }
 }

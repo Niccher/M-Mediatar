@@ -268,6 +268,12 @@ public class MainWorkhorse {
     @FXML
     public void initialize() {
         ThemeManager.applyTheme(rootPane);
+        ThemeManager.registerThemeChangeListener(theme -> {
+            ThemeManager.applyTheme(rootPane);
+            if (exportController != null && exportController.getRootPane() != null) {
+                ThemeManager.applyTheme(exportController.getRootPane());
+            }
+        });
         
         setupMediaListView();
         initVuMeters();
@@ -806,6 +812,10 @@ public class MainWorkhorse {
     private void handleImportAction() {
         FileChooser fc = new FileChooser();
         fc.setTitle("Import Media File(s)");
+        File lastImportDir = WorkspaceStorage.getLastImportDirectory();
+        if (lastImportDir != null && lastImportDir.exists()) {
+            fc.setInitialDirectory(lastImportDir);
+        }
         
         fc.getExtensionFilters().addAll(
             new FileChooser.ExtensionFilter("All Media", "*.mp4", "*.mov", "*.mkv", "*.webm", "*.avi", "*.flv", "*.wmv", "*.mpg", "*.mpeg", "*.3gp", "*.mp3", "*.wav", "*.aac", "*.m4a", "*.ogg", "*.flac", "*.opus"),
@@ -815,6 +825,12 @@ public class MainWorkhorse {
         
         List<File> files = fc.showOpenMultipleDialog(rootPane.getScene().getWindow());
         if (files != null) {
+            if (!files.isEmpty()) {
+                File parentDir = files.get(0).getParentFile();
+                if (parentDir != null && parentDir.exists()) {
+                    WorkspaceStorage.setLastImportDirectory(parentDir);
+                }
+            }
             for (File file : files) {
                 String nameLower = file.getName().toLowerCase();
                 if (nameLower.endsWith(".mp4") || nameLower.endsWith(".mp3") || nameLower.endsWith(".wav") || nameLower.endsWith(".m4a")) {
@@ -839,6 +855,7 @@ public class MainWorkhorse {
                     File mp4File = new File(file.getParentFile(), file.getName().substring(0, file.getName().lastIndexOf('.')) + ".mp4");
                     if (!mp4File.exists()) {
                         Alert alert = new Alert(Alert.AlertType.INFORMATION, "Converting " + file.getName() + " to MP4 for JavaFX compatibility. This might take a moment depending on the video length.", javafx.scene.control.ButtonType.OK);
+                        ThemeManager.applyTheme(alert);
                         alert.show();
                         new Thread(() -> {
                             try {
@@ -864,6 +881,7 @@ public class MainWorkhorse {
                     File mp3File = new File(file.getParentFile(), file.getName().substring(0, file.getName().lastIndexOf('.')) + ".mp3");
                     if (!mp3File.exists()) {
                         Alert alert = new Alert(Alert.AlertType.INFORMATION, "Converting " + file.getName() + " to MP3 for JavaFX compatibility.", javafx.scene.control.ButtonType.OK);
+                        ThemeManager.applyTheme(alert);
                         alert.show();
                         new Thread(() -> {
                             try {
@@ -1362,6 +1380,7 @@ public class MainWorkhorse {
                 javafx.scene.Scene scene = new javafx.scene.Scene(root);
                 exportStage.setScene(scene);
                 exportStage.initOwner(rootPane.getScene().getWindow());
+                ThemeManager.applyTheme(root);
                 
                 javafx.geometry.Rectangle2D bounds = javafx.stage.Screen.getPrimary().getVisualBounds();
                 exportStage.setMaxWidth(bounds.getWidth());
@@ -1372,6 +1391,9 @@ public class MainWorkhorse {
                     e.consume();
                     exportStage.hide();
                 });
+            }
+            if (exportController != null && exportController.getRootPane() != null) {
+                ThemeManager.applyTheme(exportController.getRootPane());
             }
             exportController.setTracks(tracks);
             exportStage.show();
@@ -1403,9 +1425,16 @@ public class MainWorkhorse {
     private void handleSaveAction() {
         FileChooser fc = new FileChooser();
         fc.setTitle("Save Mediatar Project");
+        File projDir = WorkspaceStorage.getProjectsDirectory();
+        if (projDir != null && projDir.exists()) {
+            fc.setInitialDirectory(projDir);
+        }
         fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Mediatar Project Files (*.mediatar)", "*.mediatar"));
         File file = fc.showSaveDialog(rootPane.getScene().getWindow());
         if (file != null) {
+            if (file.getParentFile() != null && file.getParentFile().exists()) {
+                WorkspaceStorage.setProjectsDirectory(file.getParentFile());
+            }
             // Enforce .mediatar extension regardless of what the user typed
             if (!file.getName().toLowerCase().endsWith(".mediatar")) {
                 file = new File(file.getAbsolutePath() + ".mediatar");
@@ -1427,6 +1456,7 @@ public class MainWorkhorse {
             ButtonType.YES, ButtonType.CANCEL);
         confirm.setTitle("Clear Timeline");
         confirm.setHeaderText(null);
+        ThemeManager.applyTheme(confirm);
         confirm.showAndWait();
         if (confirm.getResult() != ButtonType.YES) return;
 
@@ -1445,9 +1475,16 @@ public class MainWorkhorse {
     private void handleLoadAction() {
         FileChooser fc = new FileChooser();
         fc.setTitle("Open Mediatar Project");
+        File projDir = WorkspaceStorage.getProjectsDirectory();
+        if (projDir != null && projDir.exists()) {
+            fc.setInitialDirectory(projDir);
+        }
         fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Mediatar Project Files (*.mediatar)", "*.mediatar"));
         File file = fc.showOpenDialog(rootPane.getScene().getWindow());
         if (file != null) {
+            if (file.getParentFile() != null && file.getParentFile().exists()) {
+                WorkspaceStorage.setProjectsDirectory(file.getParentFile());
+            }
             try {
                 stopTimeline();
 
@@ -1549,15 +1586,16 @@ public class MainWorkhorse {
 
     @FXML private void handleExit() { Platform.exit(); System.exit(0); }
     
-    @FXML private void applySolarizedTheme() { ThemeManager.currentTheme = ThemeManager.Theme.SOLARIZED; ThemeManager.applyTheme(rootPane); }
-    @FXML private void applyDarkTheme() { ThemeManager.currentTheme = ThemeManager.Theme.DARK; ThemeManager.applyTheme(rootPane); }
-    @FXML private void applyLightTheme() { ThemeManager.currentTheme = ThemeManager.Theme.LIGHT; ThemeManager.applyTheme(rootPane); }
+    @FXML private void applySolarizedTheme() { ThemeManager.setTheme(ThemeManager.Theme.SOLARIZED); }
+    @FXML private void applyDarkTheme() { ThemeManager.setTheme(ThemeManager.Theme.DARK); }
+    @FXML private void applyLightTheme() { ThemeManager.setTheme(ThemeManager.Theme.LIGHT); }
     
     private void showAlert(String title, String msg) { 
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.setTitle(title);
         alert.setHeaderText(null);
         alert.setContentText(msg);
+        ThemeManager.applyTheme(alert);
         alert.showAndWait();
     }
 

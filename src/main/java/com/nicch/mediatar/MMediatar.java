@@ -19,6 +19,7 @@ public class MMediatar extends Application {
 
     @Override
     public void start(Stage stage) {
+        WorkspaceStorage.initDefaults();
         stage.setTitle("MMediatar");
         
         try {
