@@ -36,13 +36,13 @@ public class MMediatar extends Application {
         try {
             Parent root = loadFXML("mainworkhorse");
             javafx.geometry.Rectangle2D bounds = javafx.stage.Screen.getPrimary().getVisualBounds();
-            double initialWidth = Math.min(1440, bounds.getWidth() - 40);
-            double initialHeight = Math.min(900, bounds.getHeight() - 40);
+            double initialWidth = Math.min(1440, Math.max(960, bounds.getWidth() - 40));
+            double initialHeight = Math.min(900, Math.max(600, bounds.getHeight() - 60));
             
             scene = new Scene(root, initialWidth, initialHeight);
             stage.setScene(scene);
-            stage.setMinWidth(1024);
-            stage.setMinHeight(768);
+            stage.setMinWidth(960);
+            stage.setMinHeight(600);
             stage.setMaximized(true);
             stage.show();
         } catch (IOException e) {

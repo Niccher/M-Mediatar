@@ -386,8 +386,9 @@ public class TimelinePane extends Region {
         MainWorkhorse.TimelineClip hovered = getClipAt(e.getX(), e.getY());
         
         if (hovered != null) {
-            hoverMetadataTooltip.setText(String.format("File: %s\nStart: %.2fs\nDuration: %.2fs\nTrack: %d", 
-                hovered.getMediaItem().getFileName(), hovered.getStartSeconds(), hovered.getDurationSeconds(), hovered.getTrackIndex()));
+            String clipLabel = (hovered.getMediaItem() != null) ? hovered.getMediaItem().getFileName() : hovered.getTextContent();
+            hoverMetadataTooltip.setText(String.format("Clip: %s\nStart: %.2fs\nDuration: %.2fs\nTrack: %d", 
+                clipLabel != null ? clipLabel : "Text", hovered.getStartSeconds(), hovered.getDurationSeconds(), hovered.getTrackIndex()));
             
             if (!hoverMetadataTooltip.isShowing()) {
                 hoverMetadataTooltip.show(canvas, e.getScreenX() + 15, e.getScreenY() + 15);
@@ -473,9 +474,11 @@ public class TimelinePane extends Region {
                     draggedClip.setStartSeconds(newStart);
                     int newTrackIdx = getTrackIndexAtY(e.getY());
                     if (newTrackIdx != draggedClip.getTrackIndex() && newTrackIdx >= 0) {
-                        tracks.get(draggedClip.getTrackIndex()).getClips().remove(draggedClip);
-                        draggedClip.setTrackIndex(newTrackIdx);
-                        tracks.get(newTrackIdx).getClips().add(draggedClip);
+                        if (tracks.get(newTrackIdx).getType() == tracks.get(draggedClip.getTrackIndex()).getType()) {
+                            tracks.get(draggedClip.getTrackIndex()).getClips().remove(draggedClip);
+                            draggedClip.setTrackIndex(newTrackIdx);
+                            tracks.get(newTrackIdx).getClips().add(draggedClip);
+                        }
                     }
                 }
                 break;

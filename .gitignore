@@ -1,4 +1,4 @@
-# Maven
+# Maven build output
 target/
 pom.xml.tag
 pom.xml.releaseBackup
@@ -7,49 +7,60 @@ pom.xml.next
 release.properties
 dependency-reduced-pom.xml
 
-# Java bytecode
+# Java bytecode and archives
 *.class
 *.jar
 *.war
 *.ear
-*.log
 
+# IDE configurations
 # IntelliJ IDEA
 .idea/
 *.iml
+*.iws
+*.ipr
 out/
 
 # NetBeans
-nbproject/
+nbproject/private/
 nbbuild/
 dist/
 build/
 .nb-gradle/
 
+# Eclipse
+.classpath
+.project
+.settings/
+
 # VS Code
 .vscode/
+*.code-workspace
 
-# OS generated files
+# Operating System files
 .DS_Store
 Thumbs.db
+ehthumbs.db
+[Nn]et[Hh]ood
+[Tt]rash-*
+*~
 
-# Temporary files
+# Temporary and swap files
 *.tmp
 *.bak
 *.swp
+*.swo
 
-# Logs
+# Application logs
 logs/
 *.log
 
-# JavaFX / Runtime
-lib/
-*.jnlp
+# MMediatar runtime and export scratch
+/tmp/mediatar_export*
+mediatar_export*
+*.mediatar.bak
+*.mediatar.tmp
 
-# Build outputs
-/bin/
-*/bin/
-
-# Local configuration
-*.properties.local
-config.local.*
+# Documentation site builds (MkDocs)
+site/
+.cache/

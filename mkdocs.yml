@@ -1,0 +1,77 @@
+site_name: MMediatar Documentation
+site_description: Dual-audience documentation for MMediatar multi-track desktop video editor
+site_author: Niccher
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+    - content.code.annotate
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - attr_list
+
+nav:
+  - Home: README.md
+  - User Guide:
+      - Setup and Run: user/setup-and-run.md
+      - Configuration: user/configuration.md
+      - Troubleshooting: user/troubleshooting.md
+  - Architecture:
+      - System Overview: architecture/overview.md
+      - Communication & Subprocesses: architecture/communication.md
+      - Data & Storage: architecture/data-and-storage.md
+      - Deployment & Packaging: architecture/deployment.md
+      - Threat Model: architecture/threat-model.md
+  - Internal API & Contracts:
+      - Contracts Reference: api/contract.md
+  - Services:
+      - JVM & JavaFX: services/jvm.md
+  - Engineering:
+      - Local Development: engineering/local-development.md
+      - Making Changes: engineering/making-changes.md
+      - Persistence & Serialization: engineering/database.md
+      - Testing: engineering/testing.md
+      - CI Pipeline: engineering/ci.md
+      - Contributing: engineering/contributing.md
+      - Troubleshooting: engineering/troubleshooting.md
+      - Security Architecture: engineering/security.md
+      - Release Matrix: engineering/release.md
+  - Runbooks:
+      - Runtime Recovery & Restart: runbooks/restart.md
+      - Backup & Restore: runbooks/backup-and-restore.md
+  - Architecture Decision Records:
+      - ADR 0001 Custom Canvas Timeline: adr/0001-custom-canvas-timeline.md
+      - ADR 0002 Native FFmpeg Subprocesses: adr/0002-native-ffmpeg-subprocess-rendering.md
+      - ADR 0003 AES Encrypted XML Format: adr/0003-aes-encrypted-xml-project-format.md

@@ -58,128 +58,138 @@
     </top>
 
     <center>
-        <SplitPane dividerPositions="0.25, 0.75" style="-fx-background-color: transparent; -fx-padding: 5;">
+        <SplitPane fx:id="mainVerticalSplit" orientation="VERTICAL" dividerPositions="0.62" style="-fx-background-color: transparent;">
             <BorderPane.margin>
-                <Insets top="5" right="5" bottom="5" left="5"/>
+                <Insets top="4" right="4" bottom="4" left="4"/>
             </BorderPane.margin>
 
-            <VBox spacing="8" minWidth="200" style="-fx-padding: 12; -fx-background-radius: 4; -fx-border-radius: 4; -fx-border-color: #888; -fx-border-width: 1;">
-                <Label text="Media Pool" style="-fx-font-weight: bold; -fx-font-size: 14px;"/>
-                <TextField fx:id="searchField" promptText="Search media..."/>
-                <ListView fx:id="mediaListView" VBox.vgrow="ALWAYS" style="-fx-background-color: transparent;"/>
-            </VBox>
-
-            <BorderPane minWidth="400" minHeight="300" style="-fx-background-color: black; -fx-background-radius: 4; -fx-border-radius: 4; -fx-border-color: #888; -fx-border-width: 1;">
-                <top>
-                    <HBox alignment="CENTER" style="-fx-padding: 5; -fx-background-color: #111;">
-                        <Label fx:id="lblLargeTimecode" text="00:00:00.00" style="-fx-text-fill: #859900; -fx-font-family: monospace; -fx-font-size: 24px; -fx-font-weight: bold;"/>
-                    </HBox>
-                </top>
-                <center>
-                    <StackPane>
-                        <MediaView fx:id="mediaView" fitWidth="640" fitHeight="360" preserveRatio="true"/>
-                        <MediaView fx:id="mediaViewV2" fitWidth="640" fitHeight="360" preserveRatio="true"/>
-                        <javafx.scene.image.ImageView fx:id="audioThumbnailView" fitWidth="300" fitHeight="300" preserveRatio="true" visible="false"/>
-                        <Label fx:id="previewTextOverlay" text="" visible="false" style="-fx-font-size: 48px; -fx-text-fill: white; -fx-effect: dropshadow(gaussian, black, 2, 1.0, 0, 0);"/>
-                        <Label fx:id="noVideoLabel" text="Select a clip and press Play" style="-fx-text-fill: #888; -fx-font-size: 16px;"/>
-                    </StackPane>
-                </center>
-                <bottom>
-                    <HBox alignment="CENTER_LEFT" spacing="10" style="-fx-padding: 10;">
-                        <Slider fx:id="playbackSlider" HBox.hgrow="ALWAYS"/>
-                        <Label fx:id="playbackTimeLabel" text="00:00 / 00:00" style="-fx-text-fill: white; -fx-font-family: monospace; -fx-font-size: 13px;"/>
-                    </HBox>
-                </bottom>
-            </BorderPane>
-
-            <VBox spacing="12" style="-fx-padding: 15; -fx-min-width: 220; -fx-background-radius: 4; -fx-border-radius: 4; -fx-border-color: #888; -fx-border-width: 1;">
-                <Label text="Inspector" style="-fx-font-weight: bold; -fx-font-size: 14px;"/>
-                <VBox spacing="5">
-                    <Label text="Audio Level:"/>
-                    <HBox spacing="10" alignment="CENTER_LEFT">
-                        <Slider fx:id="volumeSlider" min="0" max="1" value="0.8" HBox.hgrow="ALWAYS"/>
-                        <Label fx:id="volumeValueLabel" text="80%"/>
-                    </HBox>
-                    <Button fx:id="btnMute" text="Mute Track" onAction="#toggleMute"/>
-                    <HBox fx:id="vuMeterBox" spacing="4" alignment="BOTTOM_CENTER" style="-fx-padding: 10 0 10 0; -fx-min-height: 80;"/>
+            <!-- Upper Workspace: Horizontal SplitPane (Media Pool | Video Preview | Inspector) -->
+            <SplitPane fx:id="topHorizontalSplit" dividerPositions="0.22, 0.74" style="-fx-background-color: transparent; -fx-padding: 2;">
+                <!-- Column 1: Media Pool -->
+                <VBox spacing="8" minWidth="160" prefWidth="220" style="-fx-padding: 10; -fx-background-radius: 4; -fx-border-radius: 4; -fx-border-color: #888; -fx-border-width: 1;">
+                    <Label text="Media Pool" style="-fx-font-weight: bold; -fx-font-size: 14px;"/>
+                    <TextField fx:id="searchField" promptText="Search media..."/>
+                    <ListView fx:id="mediaListView" VBox.vgrow="ALWAYS" style="-fx-background-color: transparent;"/>
                 </VBox>
-                <Separator/>
-                <VBox spacing="5" fx:id="clipInfoBox">
-                    <Label text="Clip Properties" style="-fx-font-weight: bold;"/>
-                    <HBox alignment="CENTER_LEFT" spacing="5">
-                        <Label text="Name:"/>
-                        <TextField fx:id="txtClipName" HBox.hgrow="ALWAYS"/>
-                    </HBox>
-                    <Label fx:id="lblClipDuration" text="Duration: --"/>
-                    <Label fx:id="lblClipExt" text="Type: --"/>
-                    
-                    <VBox fx:id="textPropertiesBox" spacing="5" visible="false" managed="false">
-                        <Label text="Text Content:" style="-fx-padding: 5 0 0 0;"/>
-                        <TextField fx:id="txtTextContent"/>
-                        <HBox alignment="CENTER_LEFT" spacing="5">
-                            <Label text="Color:"/>
-                            <ColorPicker fx:id="textColorPicker"/>
+
+                <!-- Column 2: Video Player -->
+                <BorderPane minWidth="300" minHeight="180" style="-fx-background-color: black; -fx-background-radius: 4; -fx-border-radius: 4; -fx-border-color: #888; -fx-border-width: 1;">
+                    <top>
+                        <HBox alignment="CENTER" style="-fx-padding: 4; -fx-background-color: #111;">
+                            <Label fx:id="lblLargeTimecode" text="00:00:00.00" style="-fx-text-fill: #859900; -fx-font-family: monospace; -fx-font-size: 22px; -fx-font-weight: bold;"/>
                         </HBox>
-                        <Label text="Font Size:"/>
-                        <HBox alignment="CENTER_LEFT" spacing="5">
-                            <Slider fx:id="fontSizeSlider" min="12" max="144" value="48" HBox.hgrow="ALWAYS"/>
-                            <Label fx:id="fontSizeLabel" text="48"/>
+                    </top>
+                    <center>
+                        <StackPane fx:id="previewContainer">
+                            <MediaView fx:id="mediaView" preserveRatio="true"/>
+                            <MediaView fx:id="mediaViewV2" preserveRatio="true"/>
+                            <javafx.scene.image.ImageView fx:id="audioThumbnailView" fitWidth="260" fitHeight="260" preserveRatio="true" visible="false"/>
+                            <Label fx:id="previewTextOverlay" text="" visible="false" style="-fx-font-size: 44px; -fx-text-fill: white; -fx-effect: dropshadow(gaussian, black, 2, 1.0, 0, 0);"/>
+                            <Label fx:id="noVideoLabel" text="Select a clip and press Play" style="-fx-text-fill: #888; -fx-font-size: 15px;"/>
+                        </StackPane>
+                    </center>
+                    <bottom>
+                        <HBox alignment="CENTER_LEFT" spacing="10" style="-fx-padding: 8;">
+                            <Slider fx:id="playbackSlider" HBox.hgrow="ALWAYS"/>
+                            <Label fx:id="playbackTimeLabel" text="00:00 / 00:00" style="-fx-text-fill: white; -fx-font-family: monospace; -fx-font-size: 12px;"/>
                         </HBox>
+                    </bottom>
+                </BorderPane>
+
+                <!-- Column 3: Inspector wrapped in ScrollPane -->
+                <ScrollPane fitToWidth="true" hbarPolicy="NEVER" vbarPolicy="AS_NEEDED" minWidth="220" prefWidth="260"
+                            style="-fx-background-color: transparent; -fx-background: transparent; -fx-padding: 0;">
+                    <VBox spacing="10" fx:id="inspectorBox" style="-fx-padding: 10; -fx-background-radius: 4; -fx-border-radius: 4; -fx-border-color: #888; -fx-border-width: 1;">
+                        <Label text="Inspector" style="-fx-font-weight: bold; -fx-font-size: 14px;"/>
+                        <VBox spacing="5">
+                            <Label text="Audio Level:"/>
+                            <HBox spacing="10" alignment="CENTER_LEFT">
+                                <Slider fx:id="volumeSlider" min="0" max="1" value="0.8" HBox.hgrow="ALWAYS"/>
+                                <Label fx:id="volumeValueLabel" text="80%"/>
+                            </HBox>
+                            <Button fx:id="btnMute" text="Mute Track" onAction="#toggleMute"/>
+                            <HBox fx:id="vuMeterBox" spacing="4" alignment="BOTTOM_CENTER" style="-fx-padding: 6 0 6 0; -fx-min-height: 60;"/>
+                        </VBox>
+                        <Separator/>
+                        <VBox spacing="5" fx:id="clipInfoBox">
+                            <Label text="Clip Properties" style="-fx-font-weight: bold;"/>
+                            <HBox alignment="CENTER_LEFT" spacing="5">
+                                <Label text="Name:"/>
+                                <TextField fx:id="txtClipName" HBox.hgrow="ALWAYS"/>
+                            </HBox>
+                            <Label fx:id="lblClipDuration" text="Duration: --"/>
+                            <Label fx:id="lblClipExt" text="Type: --"/>
+                            
+                            <VBox fx:id="textPropertiesBox" spacing="5" visible="false" managed="false">
+                                <Label text="Text Content:" style="-fx-padding: 5 0 0 0;"/>
+                                <TextField fx:id="txtTextContent"/>
+                                <HBox alignment="CENTER_LEFT" spacing="5">
+                                    <Label text="Color:"/>
+                                    <ColorPicker fx:id="textColorPicker"/>
+                                </HBox>
+                                <Label text="Font Size:"/>
+                                <HBox alignment="CENTER_LEFT" spacing="5">
+                                    <Slider fx:id="fontSizeSlider" min="12" max="144" value="48" HBox.hgrow="ALWAYS"/>
+                                    <Label fx:id="fontSizeLabel" text="48"/>
+                                </HBox>
+                                <Label text="Opacity:"/>
+                                <HBox spacing="10" alignment="CENTER_LEFT">
+                                    <Slider fx:id="textOpacitySlider" min="0.0" max="1.0" value="1.0" HBox.hgrow="ALWAYS"/>
+                                    <Label fx:id="textOpacityValueLabel" text="100%" minWidth="35"/>
+                                </HBox>
+                            </VBox>
+
+                            <VBox fx:id="videoPropertiesBox" spacing="5">
+                                <Label text="Playback Speed:" style="-fx-padding: 6 0 0 0;"/>
+                                <HBox spacing="10" alignment="CENTER_LEFT">
+                                    <Slider fx:id="speedSlider" min="0.25" max="4.0" value="1.0" HBox.hgrow="ALWAYS"/>
+                                    <Label fx:id="speedValueLabel" text="1.0x" minWidth="35"/>
+                                </HBox>
+                                
+                                <Label text="Opacity:"/>
+                                <HBox spacing="10" alignment="CENTER_LEFT">
+                                    <Slider fx:id="opacitySlider" min="0.0" max="1.0" value="1.0" HBox.hgrow="ALWAYS"/>
+                                    <Label fx:id="opacityValueLabel" text="100%" minWidth="35"/>
+                                </HBox>
+                                
+                                <Label text="Scale (PiP):"/>
+                                <HBox spacing="10" alignment="CENTER_LEFT">
+                                    <Slider fx:id="scaleSlider" min="0.1" max="3.0" value="1.0" HBox.hgrow="ALWAYS"/>
+                                    <Label fx:id="scaleValueLabel" text="1.0x" minWidth="35"/>
+                                </HBox>
+
+                                <Label text="Position X:"/>
+                                <HBox spacing="10" alignment="CENTER_LEFT">
+                                    <Slider fx:id="posXSlider" min="-640" max="640" value="0.0" HBox.hgrow="ALWAYS"/>
+                                    <Label fx:id="posXValueLabel" text="0" minWidth="35"/>
+                                </HBox>
+
+                                <Label text="Position Y:"/>
+                                <HBox spacing="10" alignment="CENTER_LEFT">
+                                    <Slider fx:id="posYSlider" min="-360" max="360" value="0.0" HBox.hgrow="ALWAYS"/>
+                                    <Label fx:id="posYValueLabel" text="0" minWidth="35"/>
+                                </HBox>
+                            </VBox>
+                            <Button fx:id="btnResetClipProps" text="Reset Properties" onAction="#resetClipProperties"
+                                    style="-fx-background-color: #586e75; -fx-text-fill: #2aa198; -fx-border-color: #2aa198; -fx-border-width: 1; -fx-border-radius: 4; -fx-font-weight: bold;"
+                                    maxWidth="Infinity" disable="true"/>
+                        </VBox>
                     </VBox>
+                </ScrollPane>
+            </SplitPane>
 
-                    <VBox fx:id="videoPropertiesBox" spacing="5">
-                        <Label text="Playback Speed:" style="-fx-padding: 10 0 0 0;"/>
-                        <HBox spacing="10" alignment="CENTER_LEFT">
-                            <Slider fx:id="speedSlider" min="0.25" max="4.0" value="1.0" HBox.hgrow="ALWAYS"/>
-                            <Label fx:id="speedValueLabel" text="1.0x" minWidth="35"/>
-                        </HBox>
-                        
-                        <Label text="Opacity:"/>
-                        <HBox spacing="10" alignment="CENTER_LEFT">
-                            <Slider fx:id="opacitySlider" min="0.0" max="1.0" value="1.0" HBox.hgrow="ALWAYS"/>
-                            <Label fx:id="opacityValueLabel" text="100%" minWidth="35"/>
-                        </HBox>
-                        
-                        <Label text="Scale (PiP):"/>
-                        <HBox spacing="10" alignment="CENTER_LEFT">
-                            <Slider fx:id="scaleSlider" min="0.1" max="3.0" value="1.0" HBox.hgrow="ALWAYS"/>
-                            <Label fx:id="scaleValueLabel" text="1.0x" minWidth="35"/>
-                        </HBox>
-
-                        <Label text="Position X:"/>
-                        <HBox spacing="10" alignment="CENTER_LEFT">
-                            <Slider fx:id="posXSlider" min="-640" max="640" value="0.0" HBox.hgrow="ALWAYS"/>
-                            <Label fx:id="posXValueLabel" text="0" minWidth="35"/>
-                        </HBox>
-
-                        <Label text="Position Y:"/>
-                        <HBox spacing="10" alignment="CENTER_LEFT">
-                            <Slider fx:id="posYSlider" min="-360" max="360" value="0.0" HBox.hgrow="ALWAYS"/>
-                            <Label fx:id="posYValueLabel" text="0" minWidth="35"/>
-                        </HBox>
-                    </VBox>
-                    <Button fx:id="btnResetClipProps" text="Reset Properties" onAction="#resetClipProperties"
-                            style="-fx-background-color: #586e75; -fx-text-fill: #2aa198; -fx-border-color: #2aa198; -fx-border-width: 1; -fx-border-radius: 4; -fx-font-weight: bold;"
-                            maxWidth="Infinity" disable="true"/>
-                </VBox>
+            <!-- Lower Workspace: Timeline & Bottom Buttons -->
+            <VBox minHeight="110" spacing="3" style="-fx-border-color: #888; -fx-border-width: 1; -fx-border-radius: 4; -fx-background-radius: 4; -fx-padding: 0;">
+                <TimelinePane fx:id="timelinePane" minHeight="65" VBox.vgrow="ALWAYS"/>
+                <HBox alignment="CENTER" spacing="10" minHeight="42" maxHeight="42" style="-fx-padding: 2 10 4 10;">
+                    <Button fx:id="btnPlayTimeline" text="Play Timeline" onAction="#playTimeline" style="-fx-text-fill: #cb4b16; -fx-font-size: 13px; -fx-font-weight: bold;"/>
+                    <Button fx:id="btnStopTimeline" text="Stop" onAction="#stopTimeline" style="-fx-text-fill: #dc322f; -fx-font-size: 13px; -fx-font-weight: bold;"/>
+                    <Separator orientation="VERTICAL"/>
+                    <ToggleButton fx:id="btnMagnet" text="Snap" selected="true" style="-fx-text-fill: #d33682; -fx-font-size: 12px; -fx-font-weight: bold;"/>
+                    <Label text="Zoom:" style="-fx-text-fill: #b58900; -fx-font-weight: bold;"/>
+                    <Slider fx:id="zoomSlider" min="1" max="100" value="50" prefWidth="140"/>
+                </HBox>
             </VBox>
         </SplitPane>
     </center>
-
-    <bottom>
-        <VBox spacing="5" style="-fx-border-color: #888; -fx-border-width: 1; -fx-border-radius: 4; -fx-background-radius: 4;">
-            <BorderPane.margin>
-                <Insets top="0" right="5" bottom="5" left="5"/>
-            </BorderPane.margin>
-            <TimelinePane fx:id="timelinePane" prefHeight="230" minHeight="150" VBox.vgrow="ALWAYS"/>
-            <HBox alignment="CENTER" spacing="10" minHeight="45" style="-fx-padding: 0 10 5 10;">
-                <Button fx:id="btnPlayTimeline" text="Play Timeline" onAction="#playTimeline" style="-fx-text-fill: #cb4b16; -fx-font-size: 14px; -fx-font-weight: bold;"/>
-                <Button fx:id="btnStopTimeline" text="Stop" onAction="#stopTimeline" style="-fx-text-fill: #dc322f; -fx-font-size: 14px; -fx-font-weight: bold;"/>
-                <Separator orientation="VERTICAL"/>
-                <ToggleButton fx:id="btnMagnet" text="Snap" selected="true" style="-fx-text-fill: #d33682; -fx-font-size: 13px; -fx-font-weight: bold;"/>
-                <Label text="Zoom:" style="-fx-text-fill: #b58900; -fx-font-weight: bold;"/>
-                <Slider fx:id="zoomSlider" min="1" max="100" value="50" prefWidth="150"/>
-            </HBox>
-        </VBox>
-    </bottom>
 </BorderPane>

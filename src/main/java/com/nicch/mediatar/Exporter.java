@@ -56,6 +56,21 @@ public class Exporter {
                     }
                 }
 
+                // Phase 3.5: Apply Overlays (V2 PiP and Text) directly onto v1Master
+                MainWorkhorse.TimelineTrack t1 = tracks.stream().filter(t -> t.getType() == MainWorkhorse.TrackType.TEXT).findFirst().orElse(null);
+                boolean hasText = t1 != null && !t1.getClips().isEmpty();
+                boolean hasV2 = v2 != null && !v2.getClips().isEmpty();
+                boolean needsOverlay = !audioOnlyOutput && (hasText || hasV2);
+
+                if (v1Master != null && needsOverlay) {
+                    v1Master = processOverlayPass(t1, v2, v1Master, tempDir, "v1_overlaid", config);
+                } else if (v1Master == null && !audioMasters.isEmpty() && needsOverlay) {
+                    // Audio-only timeline exported with overlays (audioMasters.get(0) contains the audio thumbnail video)
+                    File baseVideo = audioMasters.get(0);
+                    File overlaid = processOverlayPass(t1, v2, baseVideo, tempDir, "audio_overlaid", config);
+                    audioMasters.set(0, overlaid);
+                }
+
                 // Phase 4: Final Mixdown
                 List<String> mixCmd = new ArrayList<>();
                 mixCmd.add("ffmpeg");
@@ -111,29 +126,17 @@ public class Exporter {
                     if (v1Master != null) { mixCmd.add("-map"); mixCmd.add("0:v"); }
                 }
 
-                // Codec settings — only re-encode if text overlay needed
-                MainWorkhorse.TimelineTrack t1 = tracks.stream().filter(t -> t.getType() == MainWorkhorse.TrackType.TEXT).findFirst().orElse(null);
-                boolean hasText = t1 != null && !t1.getClips().isEmpty();
-
+                // Codec settings: v1Master is already encoded at final video settings
                 if (hasVideoOutput) {
-                    mixCmd.add("-c:v"); mixCmd.add(hasText ? "copy" : config.getVideoCodec());
-                    if (!hasText) { mixCmd.add("-b:v"); mixCmd.add(config.getVideoBitrate()); mixCmd.add("-preset"); mixCmd.add("fast"); }
+                    mixCmd.add("-c:v"); mixCmd.add("copy");
                 }
                 mixCmd.add("-c:a"); mixCmd.add(config.getAudioCodec());
                 mixCmd.add("-b:a"); mixCmd.add(config.getAudioBitrate());
 
-                boolean needsOverlay = hasVideoOutput && (hasText || (v2 != null && !v2.getClips().isEmpty()));
-                File mixOut = needsOverlay ? new File(tempDir, "mixed_pre_overlay.mp4") : config.getDestinationFile();
-                mixCmd.add(mixOut.getAbsolutePath());
+                mixCmd.add(config.getDestinationFile().getAbsolutePath());
 
                 config.getCallback().onLog("\n▶ Final Mixdown...");
                 runProcess(mixCmd, config);
-
-                // Phase 5: Overlays (V2 and Text)
-                if (needsOverlay) {
-                    File textOut = processOverlayPass(t1, v2, mixOut, tempDir, "overlay", config);
-                    java.nio.file.Files.copy(textOut.toPath(), config.getDestinationFile().toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                }
 
                 // Cleanup temp files
                 config.getCallback().onLog("🧹 Cleaning up temporary files...");
@@ -222,6 +225,8 @@ public class Exporter {
                 
                 String color = clip.getTextColor().replace("#", "0x");
                 int size = clip.getFontSize();
+                double opacity = clip.getOpacity();
+                if (opacity <= 0.0) opacity = 1.0;
                 double start = clip.getStartSeconds();
                 double end = start + clip.getDurationSeconds();
                 
@@ -232,9 +237,9 @@ public class Exporter {
                 String fontOption = fontFile != null ? ":fontfile='" + fontFile + "'" : "";
                 
                 if (textFilters.length() > 0) textFilters.append(",");
-                textFilters.append(String.format(
-                    "drawtext=textfile='%s'%s:fontcolor=%s:fontsize=%d:x=(w-text_w)/2:y=(h-text_h)/2:shadowcolor=black@0.8:shadowx=3:shadowy=3:enable='between(t,%.3f,%.3f)'",
-                    escapedPath, fontOption, color, size, start, end));
+                textFilters.append(String.format(java.util.Locale.US,
+                    "drawtext=textfile='%s'%s:fontcolor=%s:fontsize=%d:alpha=%.2f:x=(w-text_w)/2:y=(h-text_h)/2:shadowcolor=black@%.2f:shadowx=3:shadowy=3:enable='between(t,%.3f,%.3f)'",
+                    escapedPath, fontOption, color, size, opacity, Math.min(0.8, opacity), start, end));
                 clipIdx++;
             }
         }
@@ -243,8 +248,8 @@ public class Exporter {
         
         if (v2ProcessedClips.isEmpty() && hasText) {
             // Text-only
-            cmd.add("-vf"); cmd.add(textFilters.toString());
-            cmd.add("-map"); cmd.add("0:v"); // Required when other streams are explicitly mapped
+            cmd.add("-filter_complex"); cmd.add("[0:v]" + textFilters.toString() + "[outv]");
+            cmd.add("-map"); cmd.add("[outv]");
             cmd.add("-map"); cmd.add("0:a?");
         } else if (!v2ProcessedClips.isEmpty() && !hasText) {
             filter.setLength(filter.length() - 1);

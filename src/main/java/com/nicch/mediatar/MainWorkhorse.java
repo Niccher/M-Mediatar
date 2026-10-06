@@ -9,6 +9,7 @@ import javafx.scene.input.*;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.StackPane;
 import javafx.scene.media.Media;
 import javafx.scene.media.MediaPlayer;
 import javafx.scene.media.MediaView;
@@ -27,6 +28,7 @@ public class MainWorkhorse {
 
     @FXML private BorderPane rootPane;
     @FXML private ListView<MediaItem> mediaListView;
+    @FXML private StackPane previewContainer;
     @FXML private MediaView mediaView;
     @FXML private javafx.scene.image.ImageView audioThumbnailView;
     @FXML private Label noVideoLabel;
@@ -64,6 +66,8 @@ public class MainWorkhorse {
     @FXML private ColorPicker textColorPicker;
     @FXML private Slider fontSizeSlider;
     @FXML private Label fontSizeLabel;
+    @FXML private Slider textOpacitySlider;
+    @FXML private Label textOpacityValueLabel;
     @FXML private VBox videoPropertiesBox;
     @FXML private MediaView mediaViewV2;
     @FXML private Slider scaleSlider;
@@ -225,7 +229,10 @@ public class MainWorkhorse {
         public void setPlaybackSpeed(double s) { this.playbackSpeed = s; }
         public double getOpacity() { return opacity; }
         public void setOpacity(double o) { this.opacity = o; }
-        public String getAliasName() { return aliasName != null ? aliasName : mediaItem.getFileName(); }
+        public String getAliasName() {
+            if (aliasName != null) return aliasName;
+            return mediaItem != null ? mediaItem.getFileName() : (textContent != null ? textContent : "Text Title");
+        }
         public void setAliasName(String a) { this.aliasName = a; }
         public boolean isMuted() { return isMuted; }
         public void setMuted(boolean muted) { this.isMuted = muted; }
@@ -274,6 +281,33 @@ public class MainWorkhorse {
             audioThumbnailView.setImage(new javafx.scene.image.Image(getClass().getResourceAsStream("audio_thumbnail.png")));
         } catch (Exception e) {
             e.printStackTrace();
+        }
+
+        if (previewContainer != null) {
+            previewContainer.widthProperty().addListener((obs, oldW, newW) -> {
+                double w = newW.doubleValue();
+                double h = previewContainer.getHeight();
+                if (w > 0 && h > 0) {
+                    mediaView.setFitWidth(w);
+                    mediaView.setFitHeight(h);
+                    if (mediaViewV2 != null) {
+                        mediaViewV2.setFitWidth(w);
+                        mediaViewV2.setFitHeight(h);
+                    }
+                }
+            });
+            previewContainer.heightProperty().addListener((obs, oldH, newH) -> {
+                double w = previewContainer.getWidth();
+                double h = newH.doubleValue();
+                if (w > 0 && h > 0) {
+                    mediaView.setFitWidth(w);
+                    mediaView.setFitHeight(h);
+                    if (mediaViewV2 != null) {
+                        mediaViewV2.setFitWidth(w);
+                        mediaViewV2.setFitHeight(h);
+                    }
+                }
+            });
         }
 
         tracks.add(new TimelineTrack("T1", TrackType.TEXT));
@@ -409,6 +443,20 @@ public class MainWorkhorse {
                 clip.setFontSize(size);
             }
         });
+        if (textOpacitySlider != null) {
+            textOpacitySlider.valueProperty().addListener((obs, oldV, newV) -> {
+                TimelineClip clip = timelinePane.getSelectedClip();
+                if (clip != null && tracks.get(clip.getTrackIndex()).getType() == TrackType.TEXT) {
+                    clip.setOpacity(newV.doubleValue());
+                    if (textOpacityValueLabel != null) {
+                        textOpacityValueLabel.setText((int)(newV.doubleValue() * 100) + "%");
+                    }
+                    if (previewTextOverlay != null && previewTextOverlay.isVisible()) {
+                        previewTextOverlay.setOpacity(newV.doubleValue());
+                    }
+                }
+            });
+        }
     }
 
     private String formatTimecode(double totalSeconds) {
@@ -619,6 +667,13 @@ public class MainWorkhorse {
                 txtTextContent.setText(clip.getTextContent());
                 textColorPicker.setValue(javafx.scene.paint.Color.web(clip.getTextColor()));
                 fontSizeSlider.setValue(clip.getFontSize());
+                if (textOpacitySlider != null) {
+                    textOpacitySlider.setDisable(false);
+                    textOpacitySlider.setValue(clip.getOpacity());
+                    if (textOpacityValueLabel != null) {
+                        textOpacityValueLabel.setText((int)(clip.getOpacity() * 100) + "%");
+                    }
+                }
                 btnResetClipProps.setDisable(true);
             } else {
                 String name = clip.getMediaItem().getFileName();
@@ -949,6 +1004,7 @@ public class MainWorkhorse {
         if (activeTextClip != null && previewTextOverlay != null) {
             previewTextOverlay.setText(activeTextClip.getTextContent());
             previewTextOverlay.setStyle("-fx-font-size: " + activeTextClip.getFontSize() + "px; -fx-text-fill: " + activeTextClip.getTextColor() + "; -fx-effect: dropshadow(gaussian, black, 2, 1.0, 0, 0);");
+            previewTextOverlay.setOpacity(activeTextClip.getOpacity());
             previewTextOverlay.setVisible(true);
         } else if (previewTextOverlay != null) {
             previewTextOverlay.setVisible(false);
@@ -1450,6 +1506,7 @@ public class MainWorkhorse {
                             clip = new TimelineClip(loadedClip.textContent, loadedClip.start, loadedClip.duration, tracks.indexOf(targetTrack));
                             clip.setTextColor(loadedClip.textColor);
                             clip.setFontSize(loadedClip.fontSize);
+                            clip.setOpacity(loadedClip.opacity);
                         } else {
                             clip = new TimelineClip(mediaItem, loadedClip.start, loadedClip.duration, tracks.indexOf(targetTrack), loadedClip.offset);
                             clip.setPlaybackSpeed(loadedClip.speed);

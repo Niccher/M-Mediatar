@@ -1,0 +1,40 @@
+# Version control
+.git/
+.gitignore
+
+# Build outputs
+target/
+build/
+dist/
+out/
+
+# IDE configurations
+.idea/
+*.iml
+.vscode/
+*.code-workspace
+nbproject/private/
+nbbuild/
+.nb-gradle/
+.classpath
+.project
+.settings/
+
+# Documentation source and builds
+docs/
+site/
+mkdocs.yml
+.cache/
+
+# Local media tests and temporary runtime files
+*.mediatar
+*.mediatar.bak
+*.mediatar.tmp
+mediatar_export*
+TestMedia.java
+logs/
+*.log
+
+# OS metadata
+.DS_Store
+Thumbs.db
