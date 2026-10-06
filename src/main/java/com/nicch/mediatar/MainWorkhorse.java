@@ -101,6 +101,7 @@ public class MainWorkhorse {
     public static class MediaItem {
         private final File file;
         private float[] audioPeaks;
+        private double durationSeconds = 5.0;
         private final List<Runnable> onLoadCallbacks = new ArrayList<>();
         private boolean isLoaded = false;
 
@@ -116,6 +117,10 @@ public class MainWorkhorse {
             return audioPeaks;
         }
 
+        public synchronized double getDurationSeconds() {
+            return durationSeconds;
+        }
+
         public synchronized void addOnLoadCallback(Runnable callback) {
             if (isLoaded) {
                 Platform.runLater(callback);
@@ -124,10 +129,30 @@ public class MainWorkhorse {
             }
         }
 
+        private double probeDuration(File mediaFile) {
+            try {
+                ProcessBuilder pb = new ProcessBuilder(
+                    "ffprobe", "-v", "error", "-show_entries", "format=duration",
+                    "-of", "default=noprint_wrappers=1:nokey=1", mediaFile.getAbsolutePath()
+                );
+                Process p = pb.start();
+                try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()))) {
+                    String line = reader.readLine();
+                    if (line != null && !line.trim().isEmpty()) {
+                        double dur = Double.parseDouble(line.trim());
+                        if (dur > 0) return dur;
+                    }
+                }
+            } catch (Exception ignored) {}
+            return 5.0;
+        }
+
         private void extractPeaksAsync() {
             new Thread(() -> {
+                double dur = probeDuration(file);
                 float[] peaks = extractPeaks(file);
                 synchronized (MediaItem.this) {
+                    durationSeconds = dur;
                     audioPeaks = peaks;
                     isLoaded = true;
                     for (Runnable callback : onLoadCallbacks) {
@@ -346,12 +371,21 @@ public class MainWorkhorse {
                 
                 if (isPlayingTimeline) {
                     globalPlayheadTime += deltaSec;
-                    if (globalPlayheadTime > timelinePane.getMaxTime()) {
-                        stopTimeline();
-                        return;
+                    double maxTime = timelinePane.getMaxTime();
+                    if (maxTime > 0 && globalPlayheadTime >= maxTime) {
+                        if (btnLoop != null && btnLoop.isSelected()) {
+                            // Seamlessly loop the entire timeline from the beginning
+                            globalPlayheadTime = 0.0;
+                            timelinePane.setPlayheadTime(0.0);
+                            evaluateTimelinePlayback(0.0);
+                        } else {
+                            stopTimeline();
+                            return;
+                        }
+                    } else {
+                        timelinePane.setPlayheadTime(globalPlayheadTime);
+                        evaluateTimelinePlayback(globalPlayheadTime);
                     }
-                    timelinePane.setPlayheadTime(globalPlayheadTime);
-                    evaluateTimelinePlayback(globalPlayheadTime);
                     if (lblLargeTimecode != null) lblLargeTimecode.setText(formatTimecode(globalPlayheadTime));
                 }
             }
@@ -923,15 +957,12 @@ public class MainWorkhorse {
 
     @FXML 
     private void togglePlayPause() {
-        if (currentMediaPlayer == null && timelinePane.getSelectedClip() == null) {
-            if (!tracks.isEmpty() && tracks.stream().anyMatch(t -> !t.getClips().isEmpty())) toggleTimelinePlayback();
-            else showAlert("Playback", "Select a clip to play or add clips to the timeline.");
-            return;
-        }
-        if (isPlayingTimeline) {
+        boolean hasTimelineClips = !tracks.isEmpty() && tracks.stream().anyMatch(t -> !t.getClips().isEmpty());
+        if (hasTimelineClips) {
             toggleTimelinePlayback();
             return;
         }
+
         if (currentMediaPlayer != null) {
             if (currentMediaPlayer.getStatus() == MediaPlayer.Status.PLAYING) {
                 currentMediaPlayer.pause();
@@ -941,27 +972,27 @@ public class MainWorkhorse {
                 btnPlay.setText("Pause");
             }
         } else {
-            toggleTimelinePlayback();
+            showAlert("Playback", "Select a clip to play or add clips to the timeline.");
         }
     }
 
     private void toggleTimelinePlayback() {
         isPlayingTimeline = !isPlayingTimeline;
         if (isPlayingTimeline) {
+            double maxTime = timelinePane.getMaxTime();
+            if (maxTime > 0 && globalPlayheadTime >= maxTime) {
+                globalPlayheadTime = 0.0;
+                timelinePane.setPlayheadTime(0.0);
+            }
             lastTimerUpdate = 0; 
             btnPlay.setText("Pause");
             if (btnPlayTimeline != null) btnPlayTimeline.setText("Pause Timeline");
-            if (currentMediaPlayer != null && currentMediaPlayer.getStatus() == MediaPlayer.Status.PLAYING) {
-                currentMediaPlayer.stop();
-            }
-            for (MediaPlayer ap : audioPlayers.values()) {
-                if (ap != null && ap.getStatus() == MediaPlayer.Status.PLAYING) ap.stop();
-            }
             evaluateTimelinePlayback(globalPlayheadTime);
         } else {
             btnPlay.setText("Play");
             if (btnPlayTimeline != null) btnPlayTimeline.setText("Play Timeline");
             if (currentMediaPlayer != null) currentMediaPlayer.pause();
+            if (currentPlayerV2 != null) currentPlayerV2.pause();
             for (MediaPlayer ap : audioPlayers.values()) {
                 if (ap != null) ap.pause();
             }
@@ -994,19 +1025,39 @@ public class MainWorkhorse {
         activeTimelineClipV2 = null;
         activeAudioClips.clear();
         timelinePane.setPlayheadTime(0.0);
+
         if (currentMediaPlayer != null) {
             currentMediaPlayer.stop();
+            currentMediaPlayer.dispose();
+            currentMediaPlayer = null;
         }
         if (currentPlayerV2 != null) {
             currentPlayerV2.stop();
+            currentPlayerV2.dispose();
+            currentPlayerV2 = null;
         }
         for (MediaPlayer ap : audioPlayers.values()) {
-            if (ap != null) ap.stop();
+            if (ap != null) {
+                ap.stop();
+                ap.dispose();
+            }
         }
         audioPlayers.clear();
+
+        mediaView.setMediaPlayer(null);
+        mediaView.setVisible(false);
+        mediaViewV2.setMediaPlayer(null);
+        mediaViewV2.setVisible(false);
+        audioThumbnailView.setVisible(false);
+        if (previewTextOverlay != null) previewTextOverlay.setVisible(false);
+        noVideoLabel.setVisible(true);
+
         btnPlay.setText("Play");
         if (btnPlayTimeline != null) btnPlayTimeline.setText("Play Timeline");
-        noVideoLabel.setVisible(true);
+        if (lblLargeTimecode != null) lblLargeTimecode.setText(formatTimecode(0.0));
+
+        // Reset and cue up frame 0 in paused preview
+        evaluateTimelinePlayback(0.0);
     }
 
     private void evaluateTimelinePlayback(double globalTime) {
@@ -1045,8 +1096,10 @@ public class MainWorkhorse {
             } else {
                 if (currentMediaPlayer != null) {
                     currentMediaPlayer.stop();
-                    mediaView.setMediaPlayer(null);
+                    currentMediaPlayer.dispose();
+                    currentMediaPlayer = null;
                 }
+                mediaView.setMediaPlayer(null);
                 // No V1 clip – check if any audio track has a clip playing and show thumbnail
                 boolean audioIsPlaying = activeAudioClips.values().stream().anyMatch(c -> c != null);
                 mediaView.setVisible(false);
@@ -1062,11 +1115,26 @@ public class MainWorkhorse {
                 }
             }
         } else if (activeTimelineClip != null && currentMediaPlayer != null) {
+            double localTime = globalTime - activeTimelineClip.getStartSeconds();
+            double targetSeconds = Math.max(0, activeTimelineClip.getMediaStartOffset() + localTime);
             if (isPlayingTimeline) {
-                if (currentMediaPlayer.getStatus() != MediaPlayer.Status.PLAYING) currentMediaPlayer.play();
+                double totalSec = (currentMediaPlayer.getTotalDuration() != null) ? currentMediaPlayer.getTotalDuration().toSeconds() : -1;
+                if (totalSec > 0 && targetSeconds >= totalSec - 0.05) {
+                    if (currentMediaPlayer.getStatus() == MediaPlayer.Status.PLAYING) {
+                        currentMediaPlayer.pause();
+                    }
+                } else {
+                    MediaPlayer.Status st = currentMediaPlayer.getStatus();
+                    if (st == MediaPlayer.Status.PAUSED || st == MediaPlayer.Status.READY) {
+                        currentMediaPlayer.play();
+                    }
+                    javafx.util.Duration cur = currentMediaPlayer.getCurrentTime();
+                    if (cur != null && Math.abs(cur.toSeconds() - targetSeconds) > 0.35) {
+                        currentMediaPlayer.seek(javafx.util.Duration.seconds(targetSeconds));
+                    }
+                }
             } else {
-                double localTime = globalTime - activeTimelineClip.getStartSeconds();
-                currentMediaPlayer.seek(javafx.util.Duration.seconds(activeTimelineClip.getMediaStartOffset() + localTime));
+                currentMediaPlayer.seek(javafx.util.Duration.seconds(targetSeconds));
             }
         }
         
@@ -1088,19 +1156,36 @@ public class MainWorkhorse {
             } else {
                 if (currentPlayerV2 != null) {
                     currentPlayerV2.stop();
-                    mediaViewV2.setMediaPlayer(null);
+                    currentPlayerV2.dispose();
+                    currentPlayerV2 = null;
                 }
+                mediaViewV2.setMediaPlayer(null);
                 mediaViewV2.setVisible(false);
                 if (activeTimelineClip != null) {
                     Platform.runLater(() -> updateInspector(activeTimelineClip));
                 }
             }
         } else if (activeTimelineClipV2 != null && currentPlayerV2 != null) {
+            double localTime = globalTime - activeTimelineClipV2.getStartSeconds();
+            double targetSeconds = Math.max(0, activeTimelineClipV2.getMediaStartOffset() + localTime);
             if (isPlayingTimeline) {
-                if (currentPlayerV2.getStatus() != MediaPlayer.Status.PLAYING) currentPlayerV2.play();
+                double totalSec = (currentPlayerV2.getTotalDuration() != null) ? currentPlayerV2.getTotalDuration().toSeconds() : -1;
+                if (totalSec > 0 && targetSeconds >= totalSec - 0.05) {
+                    if (currentPlayerV2.getStatus() == MediaPlayer.Status.PLAYING) {
+                        currentPlayerV2.pause();
+                    }
+                } else {
+                    MediaPlayer.Status st = currentPlayerV2.getStatus();
+                    if (st == MediaPlayer.Status.PAUSED || st == MediaPlayer.Status.READY) {
+                        currentPlayerV2.play();
+                    }
+                    javafx.util.Duration cur = currentPlayerV2.getCurrentTime();
+                    if (cur != null && Math.abs(cur.toSeconds() - targetSeconds) > 0.35) {
+                        currentPlayerV2.seek(javafx.util.Duration.seconds(targetSeconds));
+                    }
+                }
             } else {
-                double localTime = globalTime - activeTimelineClipV2.getStartSeconds();
-                currentPlayerV2.seek(javafx.util.Duration.seconds(activeTimelineClipV2.getMediaStartOffset() + localTime));
+                currentPlayerV2.seek(javafx.util.Duration.seconds(targetSeconds));
             }
         }
 
@@ -1139,11 +1224,26 @@ public class MainWorkhorse {
             } else if (currentlyActive != null) {
                 MediaPlayer p = audioPlayers.get(trackIdx);
                 if (p != null) {
+                    double localTime = globalTime - currentlyActive.getStartSeconds();
+                    double targetSeconds = Math.max(0, currentlyActive.getMediaStartOffset() + localTime);
                     if (isPlayingTimeline) {
-                        if (p.getStatus() != MediaPlayer.Status.PLAYING) p.play();
+                        double totalSec = (p.getTotalDuration() != null) ? p.getTotalDuration().toSeconds() : -1;
+                        if (totalSec > 0 && targetSeconds >= totalSec - 0.05) {
+                            if (p.getStatus() == MediaPlayer.Status.PLAYING) {
+                                p.pause();
+                            }
+                        } else {
+                            MediaPlayer.Status st = p.getStatus();
+                            if (st == MediaPlayer.Status.PAUSED || st == MediaPlayer.Status.READY) {
+                                p.play();
+                            }
+                            javafx.util.Duration cur = p.getCurrentTime();
+                            if (cur != null && Math.abs(cur.toSeconds() - targetSeconds) > 0.35) {
+                                p.seek(javafx.util.Duration.seconds(targetSeconds));
+                            }
+                        }
                     } else {
-                        double localTime = globalTime - currentlyActive.getStartSeconds();
-                        p.seek(javafx.util.Duration.seconds(currentlyActive.getMediaStartOffset() + localTime));
+                        p.seek(javafx.util.Duration.seconds(targetSeconds));
                     }
                 }
             }
@@ -1154,9 +1254,12 @@ public class MainWorkhorse {
         if (currentPlayerV2 != null) {
             currentPlayerV2.stop();
             currentPlayerV2.dispose();
+            currentPlayerV2 = null;
         }
         Media media = new Media(clip.getMediaItem().getFile().toURI().toString());
         currentPlayerV2 = new MediaPlayer(media);
+        currentPlayerV2.setCycleCount(1);
+        currentPlayerV2.setOnEndOfMedia(() -> currentPlayerV2.pause());
         mediaViewV2.setMediaPlayer(currentPlayerV2);
         mediaViewV2.setVisible(true);
 
@@ -1179,9 +1282,12 @@ public class MainWorkhorse {
         if (currentMediaPlayer != null) {
             currentMediaPlayer.stop();
             currentMediaPlayer.dispose();
+            currentMediaPlayer = null;
         }
         Media media = new Media(clip.getMediaItem().getFile().toURI().toString());
         currentMediaPlayer = new MediaPlayer(media);
+        currentMediaPlayer.setCycleCount(1);
+        currentMediaPlayer.setOnEndOfMedia(() -> currentMediaPlayer.pause());
         mediaView.setMediaPlayer(currentMediaPlayer);
         
         // Use track type to determine whether to show video or audio thumbnail
@@ -1204,6 +1310,10 @@ public class MainWorkhorse {
             currentMediaPlayer.seek(javafx.util.Duration.seconds(clip.getMediaStartOffset() + localTime));
             currentMediaPlayer.setRate(clip.getPlaybackSpeed());
             mediaView.setOpacity(clip.getOpacity());
+            mediaView.setScaleX(clip.getScale());
+            mediaView.setScaleY(clip.getScale());
+            mediaView.setTranslateX(clip.getPosX());
+            mediaView.setTranslateY(clip.getPosY());
             if (isPlayingTimeline) currentMediaPlayer.play();
         });
     }
@@ -1211,6 +1321,8 @@ public class MainWorkhorse {
     private void loadAndPlayTimelineAudioClip(int trackIdx, TimelineClip clip, double globalTime) {
         Media media = new Media(clip.getMediaItem().getFile().toURI().toString());
         MediaPlayer newPlayer = new MediaPlayer(media);
+        newPlayer.setCycleCount(1);
+        newPlayer.setOnEndOfMedia(() -> newPlayer.pause());
         newPlayer.setVolume((isMuted || clip.isMuted()) ? 0 : volumeSlider.getValue());
         audioPlayers.put(trackIdx, newPlayer);
         
@@ -1336,7 +1448,7 @@ public class MainWorkhorse {
         }
         if (btnLoop != null) {
             btnLoop.setOnAction(e -> {
-                if (currentMediaPlayer != null) {
+                if (currentMediaPlayer != null && !isPlayingTimeline) {
                     currentMediaPlayer.setCycleCount(btnLoop.isSelected() ? MediaPlayer.INDEFINITE : 1);
                 }
             });
@@ -1344,25 +1456,47 @@ public class MainWorkhorse {
     }
 
     @FXML private void stepBack() {
-        if (currentMediaPlayer != null) {
+        if (isPlayingTimeline || (!tracks.isEmpty() && tracks.stream().anyMatch(t -> !t.getClips().isEmpty()))) {
+            globalPlayheadTime = Math.max(0, globalPlayheadTime - 0.1);
+            timelinePane.setPlayheadTime(globalPlayheadTime);
+            evaluateTimelinePlayback(globalPlayheadTime);
+            if (lblLargeTimecode != null) lblLargeTimecode.setText(formatTimecode(globalPlayheadTime));
+        } else if (currentMediaPlayer != null) {
             currentMediaPlayer.seek(currentMediaPlayer.getCurrentTime().subtract(javafx.util.Duration.seconds(0.1)));
         }
     }
 
     @FXML private void stepForward() {
-        if (currentMediaPlayer != null) {
+        if (isPlayingTimeline || (!tracks.isEmpty() && tracks.stream().anyMatch(t -> !t.getClips().isEmpty()))) {
+            double maxTime = timelinePane.getMaxTime();
+            globalPlayheadTime = Math.min(maxTime, globalPlayheadTime + 0.1);
+            timelinePane.setPlayheadTime(globalPlayheadTime);
+            evaluateTimelinePlayback(globalPlayheadTime);
+            if (lblLargeTimecode != null) lblLargeTimecode.setText(formatTimecode(globalPlayheadTime));
+        } else if (currentMediaPlayer != null) {
             currentMediaPlayer.seek(currentMediaPlayer.getCurrentTime().add(javafx.util.Duration.seconds(0.1)));
         }
     }
 
     @FXML private void rewind() {
-        if (currentMediaPlayer != null) {
+        if (isPlayingTimeline || (!tracks.isEmpty() && tracks.stream().anyMatch(t -> !t.getClips().isEmpty()))) {
+            globalPlayheadTime = Math.max(0, globalPlayheadTime - 5.0);
+            timelinePane.setPlayheadTime(globalPlayheadTime);
+            evaluateTimelinePlayback(globalPlayheadTime);
+            if (lblLargeTimecode != null) lblLargeTimecode.setText(formatTimecode(globalPlayheadTime));
+        } else if (currentMediaPlayer != null) {
             currentMediaPlayer.seek(currentMediaPlayer.getCurrentTime().subtract(javafx.util.Duration.seconds(5.0)));
         }
     }
 
     @FXML private void fastForward() {
-        if (currentMediaPlayer != null) {
+        if (isPlayingTimeline || (!tracks.isEmpty() && tracks.stream().anyMatch(t -> !t.getClips().isEmpty()))) {
+            double maxTime = timelinePane.getMaxTime();
+            globalPlayheadTime = Math.min(maxTime, globalPlayheadTime + 5.0);
+            timelinePane.setPlayheadTime(globalPlayheadTime);
+            evaluateTimelinePlayback(globalPlayheadTime);
+            if (lblLargeTimecode != null) lblLargeTimecode.setText(formatTimecode(globalPlayheadTime));
+        } else if (currentMediaPlayer != null) {
             currentMediaPlayer.seek(currentMediaPlayer.getCurrentTime().add(javafx.util.Duration.seconds(5.0)));
         }
     }

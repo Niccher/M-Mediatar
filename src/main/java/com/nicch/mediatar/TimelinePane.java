@@ -64,6 +64,7 @@ public class TimelinePane extends Region {
         
         canvas.setOnMouseReleased(e -> {
             dragMode = DragMode.NONE;
+            draggedClip = null;
             canvas.setCursor(currentTool == ToolMode.BLADE ? Cursor.CROSSHAIR : Cursor.DEFAULT);
             redraw();
         });
@@ -97,7 +98,21 @@ public class TimelinePane extends Region {
                         }
                     }
                     if (targetTrack >= 0) {
-                        addClipExternal(new MainWorkhorse.MediaItem(file), dropTime, targetTrack);
+                        MainWorkhorse.MediaItem item = new MainWorkhorse.MediaItem(file);
+                        double finalDropTime = Math.max(0, dropTime);
+                        boolean adjusted;
+                        do {
+                            adjusted = false;
+                            for (MainWorkhorse.TimelineClip existing : tracks.get(targetTrack).getClips()) {
+                                double exStart = existing.getStartSeconds();
+                                double exEnd = exStart + existing.getDurationSeconds();
+                                if (finalDropTime >= exStart - 0.2 && finalDropTime < exEnd) {
+                                    finalDropTime = exEnd;
+                                    adjusted = true;
+                                }
+                            }
+                        } while (adjusted);
+                        addClipExternal(item, finalDropTime, targetTrack);
                         e.setDropCompleted(true);
                     }
                 }
@@ -401,9 +416,10 @@ public class TimelinePane extends Region {
         }
 
         if (e.getY() > RULER_HEIGHT && hovered != null) {
-            double time = e.getX() * zoomSecondsPerPixel;
-            double localTime = time - hovered.getStartSeconds();
-            if (localTime < 0.5 || localTime > hovered.getDurationSeconds() - 0.5) {
+            double clipStartX = hovered.getStartSeconds() / zoomSecondsPerPixel;
+            double clipEndX = (hovered.getStartSeconds() + hovered.getDurationSeconds()) / zoomSecondsPerPixel;
+            double mouseX = e.getX();
+            if (Math.abs(mouseX - clipStartX) <= 8.0 || Math.abs(mouseX - clipEndX) <= 8.0) {
                 canvas.setCursor(Cursor.H_RESIZE);
                 return;
             }
@@ -447,10 +463,18 @@ public class TimelinePane extends Region {
             dragStartClipDur = clicked.getDurationSeconds();
             dragStartClipOffset = clicked.getMediaStartOffset();
 
-            double localTime = time - clicked.getStartSeconds();
-            if (localTime < 0.5) dragMode = DragMode.RESIZE_LEFT;
-            else if (localTime > clicked.getDurationSeconds() - 0.5) dragMode = DragMode.RESIZE_RIGHT;
-            else dragMode = DragMode.MOVE_CLIP;
+            double clipStartX = clicked.getStartSeconds() / zoomSecondsPerPixel;
+            double clipEndX = (clicked.getStartSeconds() + clicked.getDurationSeconds()) / zoomSecondsPerPixel;
+            double mouseX = e.getX();
+
+            // Only enter resize mode if within 8 pixels of either edge
+            if (Math.abs(mouseX - clipStartX) <= 8.0) {
+                dragMode = DragMode.RESIZE_LEFT;
+            } else if (Math.abs(mouseX - clipEndX) <= 8.0) {
+                dragMode = DragMode.RESIZE_RIGHT;
+            } else {
+                dragMode = DragMode.MOVE_CLIP;
+            }
         }
     }
 
@@ -471,23 +495,53 @@ public class TimelinePane extends Region {
                 double newStart = dragStartClipStart + deltaTime;
                 newStart = applySnapMagnetism(newStart, draggedClip);
                 if (newStart >= 0) {
-                    draggedClip.setStartSeconds(newStart);
                     int newTrackIdx = getTrackIndexAtY(e.getY());
-                    if (newTrackIdx != draggedClip.getTrackIndex() && newTrackIdx >= 0) {
-                        if (tracks.get(newTrackIdx).getType() == tracks.get(draggedClip.getTrackIndex()).getType()) {
-                            tracks.get(draggedClip.getTrackIndex()).getClips().remove(draggedClip);
-                            draggedClip.setTrackIndex(newTrackIdx);
-                            tracks.get(newTrackIdx).getClips().add(draggedClip);
+                    int targetTrackIdx = (newTrackIdx >= 0 && newTrackIdx < tracks.size() &&
+                        tracks.get(newTrackIdx).getType() == tracks.get(draggedClip.getTrackIndex()).getType())
+                        ? newTrackIdx : draggedClip.getTrackIndex();
+
+                    // Collision avoidance on the same track: prevent overlapping clips
+                    for (MainWorkhorse.TimelineClip other : tracks.get(targetTrackIdx).getClips()) {
+                        if (other == draggedClip) continue;
+                        double otherStart = other.getStartSeconds();
+                        double otherEnd = otherStart + other.getDurationSeconds();
+                        if (newStart < otherEnd && newStart + draggedClip.getDurationSeconds() > otherStart) {
+                            if (dragStartClipStart >= otherEnd - 0.1) {
+                                newStart = Math.max(newStart, otherEnd);
+                            } else if (dragStartClipStart + dragStartClipDur <= otherStart + 0.1) {
+                                newStart = Math.min(newStart, otherStart - draggedClip.getDurationSeconds());
+                            } else {
+                                double otherMid = (otherStart + otherEnd) / 2.0;
+                                double clipMid = newStart + draggedClip.getDurationSeconds() / 2.0;
+                                if (clipMid >= otherMid) {
+                                    newStart = otherEnd;
+                                } else {
+                                    newStart = Math.max(0, otherStart - draggedClip.getDurationSeconds());
+                                }
+                            }
                         }
+                    }
+                    newStart = Math.max(0, newStart);
+                    draggedClip.setStartSeconds(newStart);
+
+                    if (targetTrackIdx != draggedClip.getTrackIndex()) {
+                        tracks.get(draggedClip.getTrackIndex()).getClips().remove(draggedClip);
+                        draggedClip.setTrackIndex(targetTrackIdx);
+                        tracks.get(targetTrackIdx).getClips().add(draggedClip);
                     }
                 }
                 break;
             case RESIZE_LEFT:
                 double newStartL = dragStartClipStart + deltaTime;
                 newStartL = applySnapMagnetism(newStartL, draggedClip);
-                double newDur = dragStartClipDur - (newStartL - dragStartClipStart);
+                double offsetShift = newStartL - dragStartClipStart;
+                // Limit offsetShift so mediaStartOffset cannot go below 0
+                if (dragStartClipOffset + offsetShift < 0) {
+                    offsetShift = -dragStartClipOffset;
+                    newStartL = dragStartClipStart + offsetShift;
+                }
+                double newDur = dragStartClipDur - offsetShift;
                 if (newDur > 0.5 && newStartL >= 0) {
-                    double offsetShift = newStartL - dragStartClipStart;
                     draggedClip.setStartSeconds(newStartL);
                     draggedClip.setDurationSeconds(newDur);
                     draggedClip.setMediaStartOffset(Math.max(0, dragStartClipOffset + offsetShift));
@@ -498,7 +552,10 @@ public class TimelinePane extends Region {
                 double potentialEnd = draggedClip.getStartSeconds() + newDurR;
                 double snappedEnd = applySnapMagnetism(potentialEnd, draggedClip);
                 newDurR = snappedEnd - draggedClip.getStartSeconds();
-                
+                if (draggedClip.getMediaItem() != null && draggedClip.getMediaItem().getDurationSeconds() > 0) {
+                    double maxDur = draggedClip.getMediaItem().getDurationSeconds() - draggedClip.getMediaStartOffset();
+                    if (maxDur > 0.5) newDurR = Math.min(newDurR, maxDur);
+                }
                 if (newDurR > 0.5) draggedClip.setDurationSeconds(newDurR);
                 break;
         }
@@ -537,10 +594,12 @@ public class TimelinePane extends Region {
 
     private MainWorkhorse.TimelineClip getClipAt(double x, double y) {
         int trackIdx = getTrackIndexAtY(y);
-        if (trackIdx < 0) return null;
+        if (trackIdx < 0 || trackIdx >= tracks.size()) return null;
         
         double time = x * zoomSecondsPerPixel;
-        for (MainWorkhorse.TimelineClip clip : tracks.get(trackIdx).getClips()) {
+        List<MainWorkhorse.TimelineClip> clips = tracks.get(trackIdx).getClips();
+        for (int i = clips.size() - 1; i >= 0; i--) {
+            MainWorkhorse.TimelineClip clip = clips.get(i);
             if (time >= clip.getStartSeconds() && time <= clip.getStartSeconds() + clip.getDurationSeconds()) {
                 return clip;
             }
@@ -559,10 +618,16 @@ public class TimelinePane extends Region {
     }
 
     public void addClipExternal(MainWorkhorse.MediaItem item, double startTime, int trackIdx) {
-        MainWorkhorse.TimelineClip clip = new MainWorkhorse.TimelineClip(item, startTime, 5.0, trackIdx);
+        double dur = (item != null) ? item.getDurationSeconds() : 5.0;
+        MainWorkhorse.TimelineClip clip = new MainWorkhorse.TimelineClip(item, startTime, dur, trackIdx);
         tracks.get(trackIdx).getClips().add(clip);
         if (item != null) {
-            item.addOnLoadCallback(this::redraw);
+            item.addOnLoadCallback(() -> {
+                if (item.getDurationSeconds() > 0) {
+                    clip.setDurationSeconds(item.getDurationSeconds());
+                }
+                redraw();
+            });
         }
         redraw();
     }
