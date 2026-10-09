@@ -1510,6 +1510,7 @@ public class MainWorkhorse {
                 exportController.setMainWorkhorse(this);
 
                 exportStage = new Stage();
+                MMediatar.applyAppIcons(exportStage);
                 exportStage.setTitle("Advanced Export");
                 javafx.scene.Scene scene = new javafx.scene.Scene(root);
                 exportStage.setScene(scene);
@@ -1764,6 +1765,7 @@ public class MainWorkhorse {
     @FXML
     private void handleAboutAction() {
         Stage stage = new Stage();
+        MMediatar.applyAppIcons(stage);
         stage.setTitle("About MMediatar");
         stage.initOwner(rootPane.getScene().getWindow());
         stage.initModality(javafx.stage.Modality.APPLICATION_MODAL);
@@ -1773,8 +1775,23 @@ public class MainWorkhorse {
         ThemeManager.applyTheme(layout);
         
         // --- Header ---
-        VBox header = new VBox(5);
+        VBox header = new VBox(6);
         header.setAlignment(javafx.geometry.Pos.CENTER);
+
+        try {
+            java.io.InputStream is = getClass().getResourceAsStream("/com/nicch/mediatar/icon_64.png");
+            if (is == null) {
+                is = getClass().getResourceAsStream("/com/nicch/mediatar/icon.png");
+            }
+            if (is != null) {
+                javafx.scene.image.ImageView logoView = new javafx.scene.image.ImageView(new javafx.scene.image.Image(is));
+                logoView.setFitWidth(64);
+                logoView.setFitHeight(64);
+                logoView.setPreserveRatio(true);
+                header.getChildren().add(logoView);
+            }
+        } catch (Exception ignored) {
+        }
         
         Label titleLabel = new Label("MMediatar");
         titleLabel.setFont(javafx.scene.text.Font.font("System", javafx.scene.text.FontWeight.BOLD, 26));
@@ -1856,7 +1873,7 @@ public class MainWorkhorse {
         bottomPanel.getChildren().add(btnClose);
         layout.setBottom(bottomPanel);
         
-        javafx.scene.Scene scene = new javafx.scene.Scene(layout, 520, 360);
+        javafx.scene.Scene scene = new javafx.scene.Scene(layout, 520, 440);
         stage.setScene(scene);
         stage.setResizable(false);
         stage.showAndWait();

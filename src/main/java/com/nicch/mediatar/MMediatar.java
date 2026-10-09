@@ -22,17 +22,7 @@ public class MMediatar extends Application {
         WorkspaceStorage.initDefaults();
         stage.setTitle("MMediatar");
         
-        try {
-            java.io.InputStream is = getClass().getResourceAsStream("/com/nicch/mediatar/logo.png");
-            if (is != null) {
-                Image icon = new Image(is);
-                stage.getIcons().add(icon);
-            } else {
-                System.err.println("Icon not found at /com/nicch/mediatar/logo.png");
-            }
-        } catch (Exception e) {
-            System.err.println("Logo icon load failed: " + e.getMessage());
-        }
+        applyAppIcons(stage);
 
         try {
             Parent root = loadFXML("mainworkhorse");
@@ -65,5 +55,32 @@ public class MMediatar extends Application {
             throw new IOException("Critical Error: Resource stream resolved null root tree: " + resourcePath);
         }
         return root;
+    }
+
+    /**
+     * Applies standard multi-resolution icons (16, 32, 48, 64, 128, 256, 512) to the given Stage.
+     *
+     * @param targetStage the JavaFX stage to attach icons to
+     */
+    public static void applyAppIcons(Stage targetStage) {
+        if (targetStage == null) return;
+        int[] sizes = {16, 32, 48, 64, 128, 256, 512};
+        for (int size : sizes) {
+            String path = "/com/nicch/mediatar/icon_" + size + ".png";
+            try (java.io.InputStream is = MMediatar.class.getResourceAsStream(path)) {
+                if (is != null) {
+                    targetStage.getIcons().add(new Image(is));
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        if (targetStage.getIcons().isEmpty()) {
+            try (java.io.InputStream is = MMediatar.class.getResourceAsStream("/com/nicch/mediatar/icon.png")) {
+                if (is != null) {
+                    targetStage.getIcons().add(new Image(is));
+                }
+            } catch (Exception ignored) {
+            }
+        }
     }
 }

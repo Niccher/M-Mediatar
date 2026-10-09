@@ -13,7 +13,7 @@ This document provides a task-oriented recipe table, modification workflows, and
 | **Modify UI color theme or add a new theme** | `ThemeManager.java` (`Theme` enum and inline CSS styling) |
 | **Change timeline keyboard shortcuts** | `MainWorkhorse.java` (`setupKeyboardShortcuts()` or `onKeyPressed` handler) |
 | **Modify AES encryption key or cipher mode** | `ProjectSerializer.java` (`KEY_BYTES` and cipher initialization) |
-| **Change default window dimensions or app icon** | `MMediatar.java` (`start()` method) + `src/main/resources/com/nicch/mediatar/logo.png` |
+| **Change default window dimensions or app icon** | `MMediatar.java` (`applyAppIcons()` method) + `src/main/resources/com/nicch/mediatar/icon.png` |
 
 ---
 

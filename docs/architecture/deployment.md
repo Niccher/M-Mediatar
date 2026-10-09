@@ -75,7 +75,7 @@ jpackage --type deb \
          --name mediatar \
          --module com.nicch.mediatar/com.nicch.mediatar.App \
          --runtime-image target/mediatar-runtime \
-         --icon src/main/resources/com/nicch/mediatar/logo.png \
+         --icon src/main/resources/com/nicch/mediatar/icon.png \
          --app-version 1.0.0 \
          --linux-shortcut \
          --linux-menu-group "AudioVideo;Video;AudioVideoEditing;"
